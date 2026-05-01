@@ -7,7 +7,7 @@ import urllib.parse
 from urllib.parse import parse_qs, urlparse
 
 # --- [ الإعدادات المركزية ] ---
-# تعديل المنفذ ليعمل تلقائياً على الاستضافات العالمية مثل Railway
+# قراءة المنفذ تلقائياً من بيئة الاستضافة (ضروري لـ Railway)
 PORT = int(os.environ.get("PORT", 5000))
 DB_FILE = "spider_v83_final.json"
 SITE_NAME = "Spider Store"
@@ -279,3 +279,4 @@ class SpiderServer(http.server.BaseHTTPRequestHandler):
 socketserver.TCPServer.allow_reuse_address = True
 with socketserver.TCPServer(("", PORT), SpiderServer) as httpd:
     print(f"🚀 SERVER READY ON PORT {PORT}"); httpd.serve_forever()
+                                                       
