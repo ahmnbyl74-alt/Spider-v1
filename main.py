@@ -9,7 +9,7 @@ from urllib.parse import parse_qs, urlparse
 # --- [ الإعدادات المركزية ] ---
 # قراءة المنفذ تلقائياً من بيئة الاستضافة (ضروري لـ Railway)
 PORT = int(os.environ.get("PORT", 5000))
-DB_FILE = "spider_v83_final.json"
+DB_FILE = "spider_v84_new.json"
 SITE_NAME = "Spider Store"
 API_KEY = "cc1b9f1ce9c06b61773412efd4fa6af0"
 API_URL = "https://kd1s.com/api/v2"
