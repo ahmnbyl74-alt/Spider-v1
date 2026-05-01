@@ -7,12 +7,9 @@ import urllib.parse
 from urllib.parse import parse_qs, urlparse
 
 # --- [ الإعدادات المركزية ] ---
-# قراءة المنفذ تلقائياً من بيئة الاستضافة (ضروري لـ Railway)
 PORT = int(os.environ.get("PORT", 5000))
 DB_FILE = "spider_v84_new.json"
 SITE_NAME = "Spider Store"
-API_KEY = "cc1b9f1ce9c06b61773412efd4fa6af0"
-API_URL = "https://kd1s.com/api/v2"
 
 # --- [ محرك البيانات ] ---
 def load_db():
@@ -32,14 +29,13 @@ def save_db(data):
     with open(DB_FILE, 'w', encoding='utf-8') as f:
         json.dump(data, f, indent=4, ensure_ascii=False)
 
-# --- [ التصميم الموحد مع الخلفية المتحركة ] ---
+# --- [ التصميم الموحد ] ---
 def get_common_style():
     return f"""
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <style>
         :root {{ --gold: #f39c12; --dark: #070b14; --card: rgba(21, 31, 51, 0.85); --text: #f1f5f9; --danger: #ef4444; --blue: #3498db; }}
         * {{ box-sizing: border-box; -webkit-tap-highlight-color: transparent; font-family: 'Cairo', sans-serif; }}
-        
         body {{ 
             margin: 0; padding: 0; 
             background: linear-gradient(-45deg, #070b14, #151f33, #0b132b, #070b14);
@@ -47,12 +43,9 @@ def get_common_style():
             height: 100vh; width: 100vw; direction: rtl; color: var(--text); overflow-x: hidden;
         }}
         @keyframes gradientBG {{ 0% {{ background-position: 0% 50%; }} 50% {{ background-position: 100% 50%; }} 100% {{ background-position: 0% 50%; }} }}
-        
         .header {{ height: 65px; padding: 0 20px; display: flex; justify-content: space-between; align-items: center; background: rgba(21, 31, 51, 0.95); backdrop-filter: blur(10px); border-bottom: 2px solid var(--gold); position: sticky; top: 0; z-index: 1000; }}
         .scroll-content {{ padding: 15px; display: flex; flex-direction: column; align-items: center; padding-bottom: 80px; }}
         .card {{ background: var(--card); backdrop-filter: blur(15px); border-radius: 25px; padding: 25px; margin-bottom: 20px; width: 100%; max-width: 600px; border: 1px solid rgba(255,255,255,0.05); box-shadow: 0 10px 30px rgba(0,0,0,0.3); }}
-        
-        /* قائمة الخدمات الجديدة */
         .custom-select {{ position: relative; width: 100%; margin-bottom: 15px; }}
         .select-trigger {{ width: 100%; padding: 15px; background: rgba(0,0,0,0.3); border: 1px solid var(--gold); border-radius: 15px; color: white; display: flex; justify-content: space-between; align-items: center; cursor: pointer; }}
         .select-options {{ display: none; position: absolute; top: 105%; left: 0; right: 0; background: #151f33; border: 1px solid var(--gold); border-radius: 15px; z-index: 2000; max-height: 250px; overflow-y: auto; box-shadow: 0 10px 20px rgba(0,0,0,0.5); }}
@@ -60,12 +53,10 @@ def get_common_style():
         .option-item {{ padding: 12px 15px; border-bottom: 1px solid rgba(255,255,255,0.05); cursor: pointer; text-align: right; }}
         .option-item:hover {{ background: rgba(243, 156, 18, 0.1); }}
         .option-item b {{ color: var(--gold); display: block; }}
-        
         input, select, textarea {{ width: 100%; padding: 14px; margin-bottom: 12px; border-radius: 15px; border: 1px solid rgba(243, 156, 18, 0.3); background: rgba(0,0,0,0.2); color: white; outline: none; }}
         .btn-gold {{ width: 100%; padding: 16px; background: linear-gradient(45deg, #f39c12, #e67e22); border: none; border-radius: 15px; color: white; font-weight: 900; cursor: pointer; }}
         .modal {{ display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 6000; }}
         .modal-content {{ background: #151f33; border-radius: 30px; padding: 25px; max-width: 350px; margin: 120px auto; border: 2px solid var(--gold); text-align: center; }}
-        
         table {{ width: 100%; border-collapse: collapse; }}
         th, td {{ padding: 12px; text-align: center; border-bottom: 1px solid rgba(255,255,255,0.05); font-size: 13px; }}
         th {{ color: var(--gold); }}
@@ -74,11 +65,12 @@ def get_common_style():
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     """
 
-def send_to_api(service_id, link, quantity):
-    params = {'key': API_KEY, 'action': 'add', 'service': service_id, 'link': link, 'quantity': quantity}
+# --- [ نظام الربط المتعدد ] ---
+def send_to_api(api_url, api_key, service_id, link, quantity):
+    params = {'key': api_key, 'action': 'add', 'service': service_id, 'link': link, 'quantity': quantity}
     try:
         data = urllib.parse.urlencode(params).encode()
-        req = urllib.request.Request(API_URL, data=data)
+        req = urllib.request.Request(api_url, data=data)
         with urllib.request.urlopen(req) as response:
             res = json.loads(response.read().decode())
             return res.get('order')
@@ -126,7 +118,6 @@ def get_user_page(db, username):
                 </div>
                 <button class="btn-gold" onclick="placeOrder()">تأكيد الشراء</button>
             </div>
-            
             <div class="card">
                 <h3>🎟️ شحن كود رصيد</h3>
                 <input type="text" id="v_code" placeholder="أدخل الكود هنا">
@@ -146,7 +137,6 @@ def get_user_page(db, username):
                 <button class="btn-gold" onclick="document.getElementById(\'user_modal\').style.display=\'none\'">إغلاق</button>
             </div>
         </div>
-
         <script>
             const services = {services_json};
             function toggleSelect() {{
@@ -191,12 +181,14 @@ def get_admin_page(db):
         </div>
         <div class="scroll-content">
             <div class="card">
-                <h3>➕ إضافة خدمة</h3>
+                <h3>➕ إضافة خدمة (مزودين متعددين)</h3>
                 <form action="/admin_act">
                     <input type="hidden" name="act" value="add_svc">
-                    <input name="id" placeholder="ID الخدمة">
-                    <input name="n" placeholder="اسم الخدمة">
-                    <input name="p" step="0.0001" type="number" placeholder="السعر لكل 1000">
+                    <input name="api_url" placeholder="رابط الـ API للمزود (مثل: https://kd1s.com/api/v2)" required>
+                    <input name="api_key" placeholder="مفتاح الـ API (Key)" required>
+                    <input name="id" placeholder="ID الخدمة عند المزود" required>
+                    <input name="n" placeholder="اسم الخدمة في موقعك" required>
+                    <input name="p" step="0.0001" type="number" placeholder="سعرك لكل 1000" required>
                     <textarea name="desc" placeholder="وصف الخدمة"></textarea>
                     <button class="btn-gold">حفظ الخدمة</button>
                 </form>
@@ -246,7 +238,15 @@ class SpiderServer(http.server.BaseHTTPRequestHandler):
             return
         if p == "/admin_act" and SpiderServer.session == "admin":
             act = q.get('act',[''])[0]
-            if act == "add_svc": db["services"].append({"id": q['id'][0], "name": q['n'][0], "price": float(q['p'][0]), "desc": q.get('desc',[''])[0]})
+            if act == "add_svc":
+                db["services"].append({
+                    "id": q['id'][0], 
+                    "name": q['n'][0], 
+                    "price": float(q['p'][0]), 
+                    "desc": q.get('desc',[''])[0],
+                    "api_url": q.get('api_url', [''])[0],
+                    "api_key": q.get('api_key', [''])[0]
+                })
             elif act == "add_v": db["vouchers"].append({"code": q['c'][0], "value": float(q['v'][0]), "limit": int(q['l'][0]), "used_by": []})
             elif act == "del_svc": db["services"] = [s for s in db["services"] if s['id'] != q['id'][0]]
             elif act == "ban": db["users"][q['u'][0]]["is_banned"] = True
@@ -257,12 +257,13 @@ class SpiderServer(http.server.BaseHTTPRequestHandler):
             svc = next((s for s in db["services"] if s['id'] == sid), None); u = db["users"][SpiderServer.session]
             cost = (qty/1000)*svc['price'] if svc else 999999
             if svc and u['balance'] >= cost:
-                oid = send_to_api(sid, link, qty)
+                # إرسال للمزود الخاص بالخدمة المختارة فقط
+                oid = send_to_api(svc['api_url'], svc['api_key'], sid, link, qty)
                 if oid:
                     u['balance'] -= cost
                     db["orders"].append({"id": oid, "user": SpiderServer.session, "service": svc['name']})
                     save_db(db); send_h("<script>alert('تم بنجاح!');location.href='/';</script>")
-                else: send_h("<script>alert('خطأ API');location.href='/';</script>")
+                else: send_h("<script>alert('فشل الاتصال بالمزود');location.href='/';</script>")
             return
         if p == "/redeem" and SpiderServer.session:
             code = q.get('c',[''])[0]; found = False
@@ -278,5 +279,5 @@ class SpiderServer(http.server.BaseHTTPRequestHandler):
 
 socketserver.TCPServer.allow_reuse_address = True
 with socketserver.TCPServer(("", PORT), SpiderServer) as httpd:
-    print(f"🚀 SERVER READY ON PORT {PORT}"); httpd.serve_forever()
-                                                       
+    print(f"🚀 MULTI-PROVIDER SERVER READY ON PORT {PORT}"); httpd.serve_forever()
+    
