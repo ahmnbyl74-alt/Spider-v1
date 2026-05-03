@@ -9,7 +9,7 @@ from collections import Counter
 # --- [ الإعدادات المركزية ] ---
 PORT = int(os.environ.get("PORT", 5000))
 DB_FILE = "spider_master_database.json"
-SITE_NAME = "Spider Store Pro"
+SITE_NAME = "Spider iQ"
 
 # --- [ محرك البيانات المركزي ] ---
 def load_db():
