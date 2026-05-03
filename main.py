@@ -186,7 +186,7 @@ def get_admin_dashboard(db):
     total_profit = sum(u.get('spent', 0) for u in db['users'].values())
     
     prov_rows = "".join([f"<tr><td>{p['name']}</td><td><span style='color:var(--green)'>نشط</span></td></tr>" for p in db.get('providers', [])])
-    svc_rows = "".join([f"<tr><td>{s.get('cat','عام')}</td><td>{s['name']}</td><td><a href='/admin_act?act=del_svc&sid={s['id']}' style='color:var(--danger)'><i class='fas fa-trash'></i></a></td></tr>" for s in db['services']])
+    svc_rows = "".join([f"<tr><td>{s['cat']}</td><td>{s['name']}</td><td>{s['price']}$</td><td><a href='/admin_act?act=del_svc&sid={s.get('api_id', s.get('id'))}'>حذف</a></td></tr>" for s in db.get('services', [])])
 
     return f"""<!DOCTYPE html><html lang="ar"><head><meta charset="UTF-8">{get_master_style()}</head>
     <body>
@@ -224,16 +224,19 @@ def get_admin_dashboard(db):
             </div>
 
             <div class="card">
-                <h3>إدارة الخدمات والفئات</h3>
-                <form action="/admin_act">
-                    <input type="hidden" name="act" value="add_svc">
-                    <input name="cat" placeholder="الفئة (مثل: إنستقرام، تيك توك)">
-                    <input name="n" placeholder="اسم الخدمة">
-                    <input name="p" placeholder="السعر لكل 1000">
-                    <input name="id" placeholder="ID الخدمة">
-                    <button class="btn btn-gold">إضافة الخدمة للفئة</button>
-                </form>
-                <table><thead><tr><th>الفئة</th><th>الخدمة</th><th>حذف</th></tr></thead><tbody>{svc_rows or "<tr><td colspan='3'>لا يوجد</td></tr>"}</tbody></table>
+    <h3><i class="fas fa-plus-circle"></i> إضافة خدمة برابط API مباشر</h3>
+    <form action="/admin_act">
+        <input type="hidden" name="act" value="add_svc">
+        <input name="n" placeholder="اسم الخدمة" required>
+        <input name="cat" placeholder="الفئة (مثلاً: انستقرام)" required>
+        <input name="p" type="number" step="0.01" placeholder="السعر لكل 1000" required>
+        <input name="id" placeholder="ID الخدمة في الموقع الأصلي" required>
+        <input name="prov_url" placeholder="رابط API المزود" required>
+        <input name="prov_key" placeholder="API Key (المفتاح)" required>
+        <button class="btn btn-gold" style="width: 100%; margin-top: 10px;">حفظ الخدمة والربط</button>
+    </form>
+</div>
+
             </div>
         </div>
     </body></html>"""
@@ -357,17 +360,27 @@ class SpiderMasterServer(http.server.BaseHTTPRequestHandler):
         if not user:
             send_res(get_login_page()); return
 
-        # --- [ لوحة الإدارة والطلبات ] ---
-        if p == "/admin_panel" and user == "admin": send_res(get_admin_dashboard(db)); return
-        
-        if p == "/admin_act" and user == "admin":
-            act = q.get('act',[''])[0]
-            if act == "charge": 
-                target = q.get('target_user',[''])[0]; amount = float(q.get('amount',['0'])[0])
+                if p == "/admin_act" and user == "admin":
+            act = q.get('act', [''])[0]
+            if act == "charge":
+                target = q.get('target_user', [''])[0]; amount = float(q.get('amount', ['0'])[0])
                 if target in db["users"]: db["users"][target]["balance"] += amount
             elif act == "add_svc":
-                db["services"].append({"id": q['id'][0], "cat": q.get('cat', ['عام'])[0], "name": q['n'][0], "price": float(q['p'][0])})
+                new_svc = {
+                    "name": q.get('n', [''])[0],
+                    "cat": q.get('cat', ['عام'])[0],
+                    "price": float(q.get('p', ['0'])[0]),
+                    "api_id": q.get('id', [''])[0],
+                    "api_url": q.get('prov_url', [''])[0],
+                    "api_key": q.get('prov_key', [''])[0]
+                }
+                if "services" not in db: db["services"] = []
+                db["services"].append(new_svc)
             elif act == "del_svc":
+                sid = q.get('sid', [''])[0]
+                db["services"] = [s for s in db["services"] if s.get('api_id') != sid and s.get('name') != sid]
+            save_db(db); self.send_response(302); self.send_header("Location", "/admin_panel"); self.end_headers(); return
+
                 sid = q.get('sid',[''])[0]
                 db["services"] = [s for s in db["services"] if s['id'] != sid]
             save_db(db); self.send_response(302); self.send_header("Location", "/admin_panel"); self.end_headers(); return
