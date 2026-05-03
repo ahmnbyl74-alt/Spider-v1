@@ -266,10 +266,22 @@ def get_user_page(db, username):
             <div class="card">
                 <h3>طلب خدمة جديدة</h3>
                 <form action="/place_order">
-                    <select id="category_select" onchange="filterServices()" style="border: 1.5px solid var(--blue);">
-                        <option value="">-- اختر الفئة (تطبيق) --</option>
-                        {cat_options}
-                    </select>
+           <div style="position: relative; width: 100%; margin: 15px 0;">
+    <div onclick="document.getElementById('cat_opts').style.display = (document.getElementById('cat_opts').style.display === 'block' ? 'none' : 'block')" 
+         style="background: rgba(255,255,255,0.05); border: 1.5px solid var(--blue); border-radius: 18px; padding: 18px 25px; color: var(--text); cursor: pointer; display: flex; justify-content: space-between; align-items: center; font-weight: 600;">
+        <span id="cat_txt">-- اختر الفئة (تطبيق) --</span>
+        <i class="fas fa-layer-group" style="color:var(--blue);"></i>
+    </div>
+    
+    <div id="cat_opts" style="position: absolute; top: 110%; left: 0; right: 0; background: #0b132b; border: 1px solid var(--blue); border-radius: 20px; overflow-y: auto; max-height: 200px; display: none; z-index: 1000; box-shadow: 0 10px 30px rgba(0,0,0,0.5);">
+        { "".join([f'''<div onclick="document.getElementById('cat_txt').innerText='{c}'; document.getElementById('category_select').value='{c}'; document.getElementById('cat_opts').style.display='none'; filterServices();" 
+                      style="padding: 15px 25px; cursor: pointer; border-bottom: 1px solid rgba(255,255,255,0.05); font-size: 14px;">
+                      <i class="fas fa-star" style="color:var(--gold); margin-left: 10px; font-size: 10px;"></i> {c}
+                   </div>''' for c in categories]) }
+    </div>
+    <input type="hidden" name="cat" id="category_select">
+</div>
+
 
                     <div onclick="toggleMenu('svc_list')" style="background:rgba(0,0,0,0.4); border:1.5px solid var(--gold); padding:16px; border-radius:18px; cursor:pointer; display:flex; justify-content:space-between; margin-top:10px;">
                         <span id="selected_text">-- اختر الخدمة --</span><i class="fas fa-chevron-down"></i>
