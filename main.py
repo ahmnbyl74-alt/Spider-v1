@@ -2,282 +2,363 @@ import http.server
 import socketserver
 import json
 import os
-import urllib.request
-import urllib.parse
 from urllib.parse import parse_qs, urlparse
+from http import cookies
+from collections import Counter
 
 # --- [ الإعدادات المركزية ] ---
 PORT = int(os.environ.get("PORT", 5000))
-DB_FILE = "spider_v84_new.json"
-SITE_NAME = "Spider Store"
+DB_FILE = "spider_master_database.json"
+SITE_NAME = "Spider Store Pro"
 
-# --- [ محرك البيانات ] ---
+# --- [ محرك البيانات المركزي ] ---
 def load_db():
     if not os.path.exists(DB_FILE):
         data = {
             "users": {
-                "admin": {"pass": "nbelpppp", "balance": 10000.0, "phone": "077", "uid": "8249124053", "is_admin": True, "is_banned": False}
+                "admin": {"pass": "nbelpppp", "balance": 10000.0, "spent": 0.0, "phone": "077", "uid": "8249124053", "is_admin": True}
             },
-            "services": [], "vouchers": [], "orders": [], "settings": {"maintenance": False}
+            "services": [], "orders": [], "providers": [], "vouchers": [], "settings": {"maintenance": False}
         }
-        save_db(data); return data
+        save_db(data)
+        return data
     with open(DB_FILE, 'r', encoding='utf-8') as f:
-        try: return json.load(f)
-        except: return {"users": {}, "services": [], "vouchers": [], "orders": [], "settings": {"maintenance": False}}
+        try:
+            db = json.load(f)
+            keys = ["users", "services", "orders", "providers", "vouchers", "settings"]
+            for k in keys: 
+                if k not in db: db[k] = [] if k != "users" and k != "settings" else {}
+            return db
+        except:
+            return {"users": {}, "services": [], "orders": [], "providers": [], "vouchers": [], "settings": {}}
 
 def save_db(data):
     with open(DB_FILE, 'w', encoding='utf-8') as f:
         json.dump(data, f, indent=4, ensure_ascii=False)
 
-# --- [ التصميم الموحد ] ---
-def get_common_style():
+# --- [ نظام التصميم الفاخر - Ultimate UI ] ---
+def get_master_style():
     return f"""
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <style>
-        :root {{ --gold: #f39c12; --dark: #070b14; --card: rgba(21, 31, 51, 0.85); --text: #f1f5f9; --danger: #ef4444; --blue: #3498db; }}
-        * {{ box-sizing: border-box; -webkit-tap-highlight-color: transparent; font-family: 'Cairo', sans-serif; }}
-        body {{ 
-            margin: 0; padding: 0; 
-            background: linear-gradient(-45deg, #070b14, #151f33, #0b132b, #070b14);
-            background-size: 400% 400%; animation: gradientBG 15s ease infinite;
-            height: 100vh; width: 100vw; direction: rtl; color: var(--text); overflow-x: hidden;
-        }}
-        @keyframes gradientBG {{ 0% {{ background-position: 0% 50%; }} 50% {{ background-position: 100% 50%; }} 100% {{ background-position: 0% 50%; }} }}
-        .header {{ height: 65px; padding: 0 20px; display: flex; justify-content: space-between; align-items: center; background: rgba(21, 31, 51, 0.95); backdrop-filter: blur(10px); border-bottom: 2px solid var(--gold); position: sticky; top: 0; z-index: 1000; }}
-        .scroll-content {{ padding: 15px; display: flex; flex-direction: column; align-items: center; padding-bottom: 80px; }}
-        .card {{ background: var(--card); backdrop-filter: blur(15px); border-radius: 25px; padding: 25px; margin-bottom: 20px; width: 100%; max-width: 600px; border: 1px solid rgba(255,255,255,0.05); box-shadow: 0 10px 30px rgba(0,0,0,0.3); }}
-        .custom-select {{ position: relative; width: 100%; margin-bottom: 15px; }}
-        .select-trigger {{ width: 100%; padding: 15px; background: rgba(0,0,0,0.3); border: 1px solid var(--gold); border-radius: 15px; color: white; display: flex; justify-content: space-between; align-items: center; cursor: pointer; }}
-        .select-options {{ display: none; position: absolute; top: 105%; left: 0; right: 0; background: #151f33; border: 1px solid var(--gold); border-radius: 15px; z-index: 2000; max-height: 250px; overflow-y: auto; box-shadow: 0 10px 20px rgba(0,0,0,0.5); }}
-        .search-input {{ width: calc(100% - 20px); margin: 10px; padding: 12px; border-radius: 10px; border: 1px solid #333; background: #070b14; color: white; outline: none; }}
-        .option-item {{ padding: 12px 15px; border-bottom: 1px solid rgba(255,255,255,0.05); cursor: pointer; text-align: right; }}
-        .option-item:hover {{ background: rgba(243, 156, 18, 0.1); }}
-        .option-item b {{ color: var(--gold); display: block; }}
-        input, select, textarea {{ width: 100%; padding: 14px; margin-bottom: 12px; border-radius: 15px; border: 1px solid rgba(243, 156, 18, 0.3); background: rgba(0,0,0,0.2); color: white; outline: none; }}
-        .btn-gold {{ width: 100%; padding: 16px; background: linear-gradient(45deg, #f39c12, #e67e22); border: none; border-radius: 15px; color: white; font-weight: 900; cursor: pointer; }}
-        .modal {{ display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 6000; }}
-        .modal-content {{ background: #151f33; border-radius: 30px; padding: 25px; max-width: 350px; margin: 120px auto; border: 2px solid var(--gold); text-align: center; }}
-        table {{ width: 100%; border-collapse: collapse; }}
-        th, td {{ padding: 12px; text-align: center; border-bottom: 1px solid rgba(255,255,255,0.05); font-size: 13px; }}
-        th {{ color: var(--gold); }}
+        :root {{ --gold: #f39c12; --bg: #070b14; --card: rgba(21, 31, 51, 0.85); --text: #f1f5f9; --danger: #ef4444; --green: #2ecc71; --blue: #3498db; }}
+        body.light-mode {{ --bg: #f0f2f5; --card: rgba(255, 255, 255, 0.95); --text: #1e293b; }}
+        * {{ box-sizing: border-box; font-family: 'Cairo', sans-serif; transition: 0.3s; }}
+        body {{ margin: 0; background: var(--bg); color: var(--text); direction: rtl; min-height: 100vh; overflow-x: hidden; }}
+        .header {{ height: 70px; padding: 0 20px; display: flex; justify-content: space-between; align-items: center; background: rgba(21, 31, 51, 0.98); border-bottom: 2.5px solid var(--gold); position: sticky; top: 0; z-index: 2000; box-shadow: 0 4px 20px rgba(0,0,0,0.4); }}
+        .settings-menu {{ position: absolute; top: 75px; left: 15px; background: var(--card); backdrop-filter: blur(30px); border: 1.5px solid var(--gold); border-radius: 20px; width: 280px; display: none; flex-direction: column; padding: 10px; z-index: 3000; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }}
+        .settings-item {{ display: flex; align-items: center; gap: 14px; padding: 14px; color: var(--text); text-decoration: none; border-bottom: 1px solid rgba(255,255,255,0.05); cursor: pointer; font-size: 14px; border-radius: 12px; }}
+        .settings-item i {{ color: var(--gold); width: 25px; text-align: center; font-size: 18px; }}
+        .scroll-content {{ padding: 15px; display: flex; flex-direction: column; align-items: center; padding-bottom: 120px; }}
+        .card {{ background: var(--card); border-radius: 28px; padding: 22px; margin-bottom: 22px; width: 100%; max-width: 680px; border: 1px solid rgba(255,255,255,0.08); backdrop-filter: blur(12px); box-shadow: 0 15px 35px rgba(0,0,0,0.4); }}
+        .stat-grid {{ display: grid; grid-template-columns: 1fr 1fr; gap: 15px; width: 100%; max-width: 680px; margin-bottom: 22px; }}
+        .stat-box {{ background: var(--card); padding: 18px; border-radius: 22px; text-align: center; border-right: 5px solid var(--gold); box-shadow: 0 8px 15px rgba(0,0,0,0.2); }}
+        input, select {{ width: 100%; padding: 16px; margin: 10px 0; border-radius: 18px; border: 1px solid var(--gold); background: rgba(0,0,0,0.4); color: white; outline: none; }}
+        .btn {{ width: 100%; padding: 18px; border: none; border-radius: 18px; font-weight: 900; cursor: pointer; color: white; font-size: 16px; display: flex; align-items: center; justify-content: center; gap: 10px; text-decoration: none; }}
+        .btn-gold {{ background: linear-gradient(135deg, #f39c12, #d35400); }}
+        .btn-blue {{ background: #3498db; }}
+        .btn-danger {{ background: #e74c3c; }}
+        .cost-badge {{ background: rgba(46, 204, 113, 0.1); color: #2ecc71; padding: 12px; border-radius: 15px; text-align: center; font-weight: bold; margin-top: 10px; border: 1px dashed #2ecc71; display: none; width: 100%; }}
+        table {{ width: 100%; border-collapse: collapse; margin-top: 15px; font-size: 13px; }}
+        th, td {{ padding: 14px 10px; border-bottom: 1px solid rgba(255,255,255,0.05); text-align: center; }}
+        .bottom-nav {{ position: fixed; bottom: 0; width: 100%; height: 80px; background: rgba(21, 31, 51, 0.98); border-top: 2px solid var(--gold); display: flex; justify-content: space-around; align-items: center; z-index: 2000; }}
+        .nav-item {{ color: #8a99af; text-decoration: none; text-align: center; font-size: 12px; flex: 1; }}
+        .nav-item i {{ font-size: 24px; display: block; margin-bottom: 5px; }}
+        .nav-item.active {{ color: var(--gold); }}
+        .svc-item {{ padding:15px; border-bottom:1px solid rgba(255,255,255,0.05); cursor:pointer; display: none; }}
     </style>
-    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;700;900&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;900&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script>
+        let selectedPrice = 0;
+        function toggleMenu(id) {{
+            let m = document.getElementById(id);
+            if (m) {{
+                m.style.display = (m.style.display === 'none' || m.style.display === '') ? 'block' : 'none';
+            }}
+        }}
+        
+        function filterServices() {{
+            let cat = document.getElementById('category_select').value;
+            let items = document.querySelectorAll('.svc-item');
+            document.getElementById('selected_text').innerText = "-- اختر الخدمة --";
+            document.getElementById('service_id').value = "";
+            document.getElementById('cost_display').style.display = 'none';
+            selectedPrice = 0;
+
+            items.forEach(item => {{
+                if (item.getAttribute('data-cat') === cat) {{
+                    item.style.display = 'block';
+                }} else {{
+                    item.style.display = 'none';
+                }}
+            }});
+        }}
+
+        function selectService(id, name, price) {{
+            selectedPrice = price;
+            document.getElementById('selected_text').innerText = name + " ($" + price + ")";
+            document.getElementById('service_id').value = id;
+            document.getElementById('svc_list').style.display = 'none';
+            calculateCost();
+        }}
+
+        function calculateCost() {{
+            let qty = document.getElementById('order_qty').value;
+            let badge = document.getElementById('cost_display');
+            if (selectedPrice > 0 && qty > 0) {{
+                let total = (qty / 1000) * selectedPrice;
+                badge.style.display = 'block';
+                badge.innerText = "التكلفة الإجمالية: $" + total.toFixed(4);
+            }} else {{
+                badge.style.display = 'none';
+            }}
+        }}
+
+        function toggleTheme() {{
+            document.body.classList.toggle('light-mode');
+        }}
+
+        function showAccountInfo(name, bal, spent) {{
+            alert("👤 حسابي\\n----------\\nالإسم: " + name + "\\nالرصيد الحالي: $" + bal + "\\nإجمالي الإنفاق: $" + spent);
+        }}
+    </script>
     """
 
-# --- [ نظام الربط المتعدد ] ---
-def send_to_api(api_url, api_key, service_id, link, quantity):
-    params = {'key': api_key, 'action': 'add', 'service': service_id, 'link': link, 'quantity': quantity}
-    try:
-        data = urllib.parse.urlencode(params).encode()
-        req = urllib.request.Request(api_url, data=data)
-        with urllib.request.urlopen(req) as response:
-            res = json.loads(response.read().decode())
-            return res.get('order')
-    except: return None
-
-def get_user_page(db, username):
-    u = db["users"].get(username, {})
-    services_json = json.dumps({s['id']: s for s in db['services']})
-    svc_options = "".join([f'<div class="option-item" onclick="selectSvc(\'{s["id"]}\', \'{s["name"]}\')"><b>{s["name"]}</b><small>السعر: ${s["price"]}</small></div>' for s in db['services']])
-    
-    return f"""<!DOCTYPE html><html lang="ar"><head><meta charset="UTF-8">{get_common_style()}</head>
-    <body>
-        <div class="header">
-            <div style="font-weight:900; color:var(--gold); font-size:20px;"><i class="fas fa-spider"></i> {SITE_NAME}</div>
-            <div style="display:flex; gap:18px; align-items:center;">
-                {f'<a href="/admin_panel" style="color:var(--gold);"><i class="fas fa-user-shield fa-lg"></i></a>' if u.get('is_admin') else ''}
-                <i class="fas fa-user-circle fa-lg" style="color:var(--gold); cursor:pointer;" onclick="document.getElementById(\'user_modal\').style.display=\'block\'"></i>
-                <i class="fas fa-sign-out-alt fa-lg" style="cursor:pointer;" onclick="location.href=\'/logout\'"></i>
-            </div>
-        </div>
-        <div class="scroll-content">
-            <div class="card" style="border-right:6px solid var(--gold); background:linear-gradient(to left, rgba(243,156,18,0.1), transparent);">
-                <small>الرصيد المتاح</small>
-                <div style="font-size:36px; font-weight:900; color:var(--gold);">${u.get('balance', 0):.3f}</div>
-            </div>
+# --- [ الواجهة المحدثة: بوابة الدخول ] ---
+def get_login_page():
+    return f"""<!DOCTYPE html><html lang="ar"><head><meta charset="UTF-8">{get_master_style()}</head>
+    <body style="display:flex; justify-content:center; align-items:center; min-height:100vh; padding:20px;">
+        <div style="text-align:center; width:100%; max-width:450px; animation: slideUp 0.8s ease;">
             
-            <div class="card">
-                <h3><i class="fas fa-shopping-cart"></i> طلب جديد</h3>
-                <div class="custom-select">
-                    <div class="select-trigger" onclick="toggleSelect()">
-                        <span id="svc_display">-- اختر الخدمة المطلوبة --</span>
-                        <i class="fas fa-chevron-down"></i>
-                    </div>
-                    <div id="select_menu" class="select-options">
-                        <input type="text" class="search-input" placeholder="🔍 ابحث عن خدمة..." onkeyup="filterSvcs(this.value)">
-                        <div id="items_container">{svc_options}</div>
-                    </div>
-                </div>
-                <input type="hidden" id="sid">
-                <input id="link" placeholder="رابط الطلب">
-                <input id="qty" type="number" placeholder="الكمية" oninput="calculateCost()">
-                <div style="background:rgba(0,0,0,0.3); padding:15px; border-radius:15px; text-align:center; margin-bottom:15px; border:1px dashed var(--gold);">
-                    <small>التكلفة الإجمالية</small><br>
-                    <span id="total_cost" style="font-size:24px; font-weight:900; color:var(--gold);">$0.0000</span>
-                </div>
-                <button class="btn-gold" onclick="placeOrder()">تأكيد الشراء</button>
+            <div style="display:inline-flex; align-items:center; gap:10px; background:rgba(255,255,255,0.1); padding:8px 20px; border-radius:50px; border:1px solid rgba(255,255,255,0.2); margin-bottom:25px; color:#fff; font-size:13px;">
+                <i class="fas fa-bolt" style="color:var(--gold);"></i> منصة خدمات السوشيال ميديا الاحترافية
             </div>
-            <div class="card">
-                <h3>🎟️ شحن كود رصيد</h3>
-                <input type="text" id="v_code" placeholder="أدخل الكود هنا">
-                <button class="btn-gold" style="background:var(--blue)" onclick="redeemVoucher()">تفعيل الكود</button>
-            </div>
-        </div>
 
-        <div id="user_modal" class="modal" onclick="this.style.display=\'none\'">
-            <div class="modal-content" onclick="event.stopPropagation()">
-                <i class="fas fa-user-circle fa-4x" style="color:var(--gold); margin-bottom:15px;"></i>
-                <h4>معلومات الحساب</h4>
-                <div style="text-align:right; font-size:14px; padding:10px;">
-                    <p>👤 المستخدم: {username}</p>
-                    <p>🆔 الآيدي: {u.get('uid', '---')}</p>
-                    <p>💰 الرصيد: ${u.get('balance', 0):.3f}</p>
-                </div>
-                <button class="btn-gold" onclick="document.getElementById(\'user_modal\').style.display=\'none\'">إغلاق</button>
+            <h1 style="font-size:38px; font-weight:900; line-height:1.3; margin-bottom:15px; color:#fff; text-shadow: 0 4px 10px rgba(0,0,0,0.3);">
+                نمّي حضورك<br>على <span style="color:var(--gold);">السوشيال ميديا</span><br>بسرعة وموثوقية
+            </h1>
+            
+            <p style="color:rgba(255,255,255,0.7); font-size:15px; margin-bottom:40px; line-height:1.6;">
+                أكبر منصة عراقية لخدمات التواصل الاجتماعي - متابعين، مشاهدات، إعجابات وأكثر بأسعار تنافسية وتنفيذ فوري.
+            </p>
+
+            <div id="login_form">
+                <form action="/auth_action">
+                    <div style="margin-bottom:15px;">
+                        <input name="user" placeholder="اسم المستخدم" required style="border-radius:50px; background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.2); padding:18px 25px;">
+                        <input name="pass" type="password" placeholder="كلمة المرور" required style="border-radius:50px; background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.2); padding:18px 25px;">
+                    </div>
+                    <button class="btn" style="background:#fff; color:#070b14; border-radius:50px; font-weight:700; margin-bottom:15px; height:60px; box-shadow:0 10px 20px rgba(0,0,0,0.2);">
+                         ابدأ الآن مجاناً <i class="fas fa-rocket" style="margin-right:8px;"></i>
+                    </button>
+                </form>
+                <button onclick="switchAuth('signup')" style="background:transparent; color:#fff; border:2px solid rgba(255,255,255,0.3); border-radius:50px; width:100%; height:60px; font-weight:600; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:10px;">
+                    <i class="fas fa-sign-in-alt"></i> تسجيل حساب جديد
+                </button>
             </div>
+
+            <div id="signup_form" style="display:none;">
+                <form action="/signup_action">
+                    <input name="user" placeholder="اليوزر نيم" required style="border-radius:50px;">
+                    <input name="pass" type="password" placeholder="كلمة المرور" required style="border-radius:50px;">
+                    <input name="tele_id" placeholder="رقم ايدي تليجرام (ID)" required style="border-radius:50px;">
+                    <button class="btn btn-gold" style="border-radius:50px; height:60px; margin-top:15px;">تأكيد التسجيل <i class="fas fa-user-plus"></i></button>
+                </form>
+                <button class="btn btn-danger" style="border-radius:50px; height:60px; margin-top:10px; background:transparent; border:1px solid var(--danger);" onclick="switchAuth('login')">رجوع للدخول</button>
+            </div>
+
         </div>
+        
         <script>
-            const services = {services_json};
-            function toggleSelect() {{
-                const m = document.getElementById('select_menu');
-                m.style.display = m.style.display === 'block' ? 'none' : 'block';
-            }}
-            function filterSvcs(val) {{
-                const items = document.querySelectorAll('.option-item');
-                items.forEach(i => i.style.display = i.innerText.toLowerCase().includes(val.toLowerCase()) ? 'block' : 'none');
-            }}
-            function selectSvc(id, name) {{
-                document.getElementById('sid').value = id;
-                document.getElementById('svc_display').innerText = name;
-                toggleSelect(); calculateCost();
-            }}
-            function calculateCost() {{
-                let id = document.getElementById('sid').value; 
-                let q = document.getElementById('qty').value || 0;
-                if(id && services[id]) document.getElementById('total_cost').innerText = "$" + ((q / 1000) * services[id].price).toFixed(4);
-            }}
-            function placeOrder() {{
-                let s = document.getElementById('sid').value, l = document.getElementById('link').value, q = document.getElementById('qty').value;
-                if(!s || !l || !q) return alert("يرجى إكمال جميع الحقول");
-                location.href = `/place_order?sid=${{s}}&link=${{l}}&qty=${{q}}`;
-            }}
-            function redeemVoucher() {{ 
-                let c = document.getElementById('v_code').value; 
-                if(c) location.href = '/redeem?c='+c; 
+            function switchAuth(mode) {{
+                document.getElementById('login_form').style.display = mode === 'login' ? 'block' : 'none';
+                document.getElementById('signup_form').style.display = mode === 'signup' ? 'block' : 'none';
             }}
         </script>
     </body></html>"""
 
-def get_admin_page(db):
-    users_rows = "".join([f"<tr><td>{un}</td><td>${ud['balance']:.2f}</td><td><a href='/admin_act?act=ban&u={un}' style='color:var(--danger)'>حظر</a></td></tr>" for un, ud in db['users'].items()])
-    svc_rows = "".join([f"<tr><td>{s['id']}</td><td>{s['name']}</td><td><a href='/admin_act?act=del_svc&id={s['id']}' style='color:var(--danger)'>حذف</a></td></tr>" for s in db['services']])
 
-    return f"""<!DOCTYPE html><html lang="ar"><head><meta charset="UTF-8">{get_common_style()}</head>
-    <body style="overflow-y:auto;">
-        <div class="header">
-            <div style="font-weight:900; color:var(--gold);">لوحة الإدارة</div>
-            <a href="/" style="color:white;"><i class="fas fa-home fa-lg"></i></a>
-        </div>
+def get_admin_dashboard(db):
+    total_users = len(db['users'])
+    total_balance = sum(u.get('balance', 0) for u in db['users'].values())
+    total_orders = len(db['orders'])
+    total_profit = sum(u.get('spent', 0) for u in db['users'].values())
+    
+    prov_rows = "".join([f"<tr><td>{p['name']}</td><td><span style='color:var(--green)'>نشط</span></td></tr>" for p in db.get('providers', [])])
+    svc_rows = "".join([f"<tr><td>{s.get('cat','عام')}</td><td>{s['name']}</td><td><a href='/admin_act?act=del_svc&sid={s['id']}' style='color:var(--danger)'><i class='fas fa-trash'></i></a></td></tr>" for s in db['services']])
+
+    return f"""<!DOCTYPE html><html lang="ar"><head><meta charset="UTF-8">{get_master_style()}</head>
+    <body>
+        <div class="header"><div style="font-weight:900; color:var(--gold);">لوحة الإدارة</div><a href="/" style="color:white;"><i class="fas fa-home fa-lg"></i></a></div>
         <div class="scroll-content">
+            <div class="stat-grid">
+                <div class="stat-box" style="border-right-color:var(--blue);"><small>المستخدمين</small><br><b>{total_users}</b></div>
+                <div class="stat-box" style="border-right-color:var(--green);"><small>إجمالي الرصيد</small><br><b>${total_balance:.2f}</b></div>
+                <div class="stat-box" style="border-right-color:var(--gold);"><small>إجمالي الأرباح</small><br><b>${total_profit:.2f}</b></div>
+                <div class="stat-box" style="border-right-color:var(--danger);"><small>الطلبات</small><br><b>{total_orders}</b></div>
+            </div>
+
             <div class="card">
-                <h3>➕ إضافة خدمة (مزودين متعددين)</h3>
+                <h3>إدارة رصيد الأعضاء</h3>
+                <form action="/admin_act">
+                    <input name="target_user" placeholder="اسم المستخدم">
+                    <input name="amount" placeholder="المبلغ">
+                    <div style="display:flex; gap:10px;">
+                        <button name="act" value="charge" class="btn btn-blue" style="flex:1;">شحن</button>
+                        <button name="act" value="remove_balance" class="btn btn-danger" style="flex:1;">خصم</button>
+                    </div>
+                </form>
+            </div>
+
+            <div class="card">
+                <h3><i class="fas fa-plug"></i> إضافة مزود (API Provider)</h3>
+                <form action="/admin_act">
+                    <input type="hidden" name="act" value="add_prov">
+                    <input name="prov_name" placeholder="اسم المزود">
+                    <input name="prov_url" placeholder="رابط الـ API">
+                    <input name="prov_key" placeholder="API Key">
+                    <button class="btn btn-blue">حفظ المزود</button>
+                </form>
+                <table><thead><tr><th>المزود</th><th>الحالة</th></tr></thead><tbody>{prov_rows or "<tr><td colspan='2'>لا يوجد مزودين</td></tr>"}</tbody></table>
+            </div>
+
+            <div class="card">
+                <h3>إدارة الخدمات والفئات</h3>
                 <form action="/admin_act">
                     <input type="hidden" name="act" value="add_svc">
-                    <input name="api_url" placeholder="رابط الـ API للمزود (مثل: https://kd1s.com/api/v2)" required>
-                    <input name="api_key" placeholder="مفتاح الـ API (Key)" required>
-                    <input name="id" placeholder="ID الخدمة عند المزود" required>
-                    <input name="n" placeholder="اسم الخدمة في موقعك" required>
-                    <input name="p" step="0.0001" type="number" placeholder="سعرك لكل 1000" required>
-                    <textarea name="desc" placeholder="وصف الخدمة"></textarea>
-                    <button class="btn-gold">حفظ الخدمة</button>
+                    <input name="cat" placeholder="الفئة (مثل: إنستقرام، تيك توك)">
+                    <input name="n" placeholder="اسم الخدمة">
+                    <input name="p" placeholder="السعر لكل 1000">
+                    <input name="id" placeholder="ID الخدمة">
+                    <button class="btn btn-gold">إضافة الخدمة للفئة</button>
                 </form>
+                <table><thead><tr><th>الفئة</th><th>الخدمة</th><th>حذف</th></tr></thead><tbody>{svc_rows or "<tr><td colspan='3'>لا يوجد</td></tr>"}</tbody></table>
             </div>
-            <div class="card">
-                <h3>🎟️ إنشاء كود رصيد</h3>
-                <form action="/admin_act">
-                    <input type="hidden" name="act" value="add_v">
-                    <input name="c" placeholder="اسم الكود">
-                    <input name="v" type="number" step="0.01" placeholder="القيمة">
-                    <input name="l" type="number" placeholder="عدد المستخدمين">
-                    <button class="btn-gold" style="background:var(--blue)">إنشاء</button>
-                </form>
-            </div>
-            <div class="card"><h3>⚙️ الخدمات</h3><table><tr><th>ID</th><th>الاسم</th><th>فعل</th></tr>{svc_rows}</table></div>
-            <div class="card"><h3>👥 المستخدمين</h3><table><tr><th>يوزر</th><th>رصيد</th><th>فعل</th></tr>{users_rows}</table></div>
         </div>
     </body></html>"""
 
-def get_auth_page(mode="login"):
-    title = "دخول" if mode == "login" else "إنشاء حساب"
-    fields = """<input name="user" placeholder="اسم المستخدم" required><input name="pass" type="password" placeholder="كلمة المرور" required>"""
-    if mode == "signup":
-        fields += """<input name="uid" placeholder="رقم الآيدي (ID)" required><input name="phone" placeholder="رقم الهاتف" required>"""
-    return f"""<!DOCTYPE html><html lang="ar"><head><meta charset="UTF-8">{get_common_style()}</head><body style="display:flex;justify-content:center;align-items:center;"><div class="card" style="width:90%;max-width:380px;text-align:center;"><i class="fas fa-spider fa-4x" style="color:var(--gold);margin-bottom:20px;"></i><h2>{SITE_NAME}</h2><form action="/{'auth_action' if mode == 'login' else 'reg_action'}">{fields}<button class="btn-gold">{title}</button></form><div style="margin-top:20px;"><a href="/{ 'signup' if mode=='login' else '' }" style="color:var(--gold);text-decoration:none;font-size:13px;">{ 'إنشاء حساب جديد' if mode=='login' else 'لديك حساب؟ سجل دخول' }</a></div></div></body></html>"""
+def get_user_page(db, username):
+    u = db["users"].get(username, {})
+    categories = sorted(list(set([s.get('cat', 'عام') for s in db['services']])))
+    cat_options = "".join([f'<option value="{c}">{c}</option>' for c in categories])
+    svc_items = "".join([f'<div class="svc-item" data-cat="{s.get("cat","عام")}" onclick="selectService(\'{s["id"]}\', \'{s["name"]}\', {s["price"]})">{s["name"]} (${s["price"]})</div>' for s in db['services']])
+    orders_log = "".join([f'<div style="padding:15px; background:rgba(0,0,0,0.3); border-radius:15px; margin-bottom:10px; border-right:4px solid var(--gold);"><b>{o["service"]}</b><br><small>الحالة: مكتمل</small></div>' for o in db['orders'] if o['user'] == username][::-1])
+    
+    return f"""<!DOCTYPE html><html lang="ar"><head><meta charset="UTF-8">{get_master_style()}</head>
+    <body>
+        <div class="header"><div style="font-weight:900; color:var(--gold); font-size:22px;">{SITE_NAME}</div><i class="fas fa-cog fa-lg" style="color:var(--gold); cursor:pointer;" onclick="toggleMenu('quick_settings')"></i></div>
+        
+        <div id="quick_settings" class="settings-menu">
+            <div class="settings-item" onclick="showAccountInfo('{username}', {u.get('balance',0)}, {u.get('spent',0)})"><i class="fas fa-id-card"></i> حسابي</div>
+            <div class="settings-item" onclick="toggleTheme()"><i class="fas fa-moon"></i> الوضع الليلي</div>
+            <a href="https://t.me/alw623" class="settings-item"><i class="fab fa-telegram-plane"></i> الدعم الفني</a>
+            {f'<a href="/admin_panel" class="settings-item" style="color:var(--gold)"><i class="fas fa-user-shield"></i> لوحة الإدارة</a>' if username == "admin" else ''}
+            <a href="/logout" class="settings-item" style="color:var(--danger)"><i class="fas fa-sign-out-alt"></i> خروج</a>
+        </div>
 
-class SpiderServer(http.server.BaseHTTPRequestHandler):
-    session = None
+        <div class="scroll-content">
+            <div class="stat-grid">
+                <div class="stat-box" style="border-right-color:var(--green);"><small>رصيدك</small><div style="font-size:22px; font-weight:900; color:var(--green);">${u.get('balance',0):.2f}</div></div>
+                <div class="stat-box" style="border-right-color:var(--danger);"><small>إنفاقك</small><div style="font-size:22px; font-weight:900; color:var(--danger);">${u.get('spent',0):.2f}</div></div>
+            </div>
+
+            <div class="card">
+                <h3>طلب خدمة جديدة</h3>
+                <form action="/place_order">
+                    <select id="category_select" onchange="filterServices()" style="border: 1.5px solid var(--blue);">
+                        <option value="">-- اختر الفئة (تطبيق) --</option>
+                        {cat_options}
+                    </select>
+
+                    <div onclick="toggleMenu('svc_list')" style="background:rgba(0,0,0,0.4); border:1.5px solid var(--gold); padding:16px; border-radius:18px; cursor:pointer; display:flex; justify-content:space-between; margin-top:10px;">
+                        <span id="selected_text">-- اختر الخدمة --</span><i class="fas fa-chevron-down"></i>
+                    </div>
+                    <div id="svc_list" class="select-items" style="display:none; background:#0b132b; border:1px solid var(--gold); border-radius:20px; margin-top:5px; max-height:200px; overflow-y:auto;">
+                        {svc_items or '<div style="padding:15px;">يرجى اختيار فئة أولاً</div>'}
+                    </div>
+
+                    <input type="hidden" name="sid" id="service_id" required>
+                    <input name="link" placeholder="الرابط / اليوزر" required>
+                    <input name="qty" id="order_qty" type="number" placeholder="الكمية المطلوبة" oninput="calculateCost()" required>
+                    
+                    <div id="cost_display" class="cost-badge"></div>
+                    
+                    <button class="btn btn-gold" style="margin-top:15px;">تأكيد الطلب</button>
+                </form>
+            </div>
+
+            <div class="card"><h3>سجل طلباتي</h3>{orders_log or "لا توجد طلبات سابقة."}</div>
+        </div>
+
+        <div class="bottom-nav">
+            <a href="/" class="nav-item active"><i class="fas fa-home"></i>الرئيسية</a>
+            <a href="https://t.me/SmmSpider" class="nav-item"><i class="fas fa-headset"></i>مساعدة</a>
+        </div>
+    </body></html>"""
+
+# --- [ سيرفر المعالجة ] ---
+class SpiderMasterServer(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
-        db = load_db()
-        parsed = urlparse(self.path); p, q = parsed.path, parse_qs(parsed.query)
-        def send_h(c): self.send_response(200); self.send_header("Content-type","text/html; charset=utf-8"); self.end_headers(); self.wfile.write(c.encode('utf-8'))
+        db = load_db(); cookie = self.headers.get('Cookie')
+        user = cookies.SimpleCookie(cookie)['session_user'].value if cookie and 'session_user' in cookies.SimpleCookie(cookie) else None
+        p, q = urlparse(self.path).path, parse_qs(urlparse(self.path).query)
 
-        if p == "/signup": send_h(get_auth_page("signup")); return
-        if p == "/reg_action":
-            u, pw, uid, ph = q.get('user',[''])[0], q.get('pass',[''])[0], q.get('uid',[''])[0], q.get('phone',[''])[0]
-            if u and u not in db["users"]:
-                db["users"][u] = {"pass": pw, "uid": uid, "phone": ph, "balance": 0.0, "is_admin": False, "is_banned": False}
-                save_db(db); send_h("<script>alert('تم إنشاء الحساب!');location.href='/';</script>")
-            return
+        def send_res(content, set_c=None):
+            self.send_response(200); self.send_header("Content-type","text/html; charset=utf-8")
+            if set_c: self.send_header("Set-Cookie", set_c)
+            self.end_headers(); self.wfile.write(content.encode('utf-8'))
+
         if p == "/auth_action":
             u, pw = q.get('user',[''])[0], q.get('pass',[''])[0]
-            if u in db["users"] and db["users"][u]["pass"] == pw:
-                if db["users"][u].get("is_banned"): send_h("<script>alert('محظور!');location.href='/';</script>")
-                else: SpiderServer.session = u; self.send_response(302); self.send_header("Location", "/"); self.end_headers()
-            else: send_h("<script>alert('بيانات خاطئة!');location.href='/';</script>")
+            if u in db["users"] and db["users"][u]["pass"] == pw: send_res("<script>location.href='/';</script>", f"session_user={u}; Path=/;")
+            else: send_res("<script>alert('خطأ!');location.href='/';</script>")
             return
-        if p == "/admin_act" and SpiderServer.session == "admin":
+
+        if p == "/logout": 
+            self.send_response(302); self.send_header("Location", "/"); self.send_header("Set-Cookie", "session_user=; Max-Age=0"); self.end_headers(); return
+
+        if not user: send_res(get_login_page()); return
+
+        if p == "/admin_panel" and user == "admin": send_res(get_admin_dashboard(db)); return
+        
+        if p == "/admin_act" and user == "admin":
             act = q.get('act',[''])[0]
-            if act == "add_svc":
+            if act == "charge": 
+                target = q.get('target_user',[''])[0]; amount = float(q.get('amount',['0'])[0])
+                if target in db["users"]: db["users"][target]["balance"] += amount
+            elif act == "add_svc":
                 db["services"].append({
                     "id": q['id'][0], 
+                    "cat": q.get('cat', ['عام'])[0], 
                     "name": q['n'][0], 
-                    "price": float(q['p'][0]), 
-                    "desc": q.get('desc',[''])[0],
-                    "api_url": q.get('api_url', [''])[0],
-                    "api_key": q.get('api_key', [''])[0]
+                    "price": float(q['p'][0])
                 })
-            elif act == "add_v": db["vouchers"].append({"code": q['c'][0], "value": float(q['v'][0]), "limit": int(q['l'][0]), "used_by": []})
-            elif act == "del_svc": db["services"] = [s for s in db["services"] if s['id'] != q['id'][0]]
-            elif act == "ban": db["users"][q['u'][0]]["is_banned"] = True
+            elif act == "add_prov":
+                db["providers"].append({
+                    "name": q.get('prov_name',[''])[0], 
+                    "url": q.get('prov_url',[''])[0], 
+                    "key": q.get('prov_key',[''])[0]
+                })
+            elif act == "del_svc":
+                sid = q.get('sid',[''])[0]
+                db["services"] = [s for s in db["services"] if s['id'] != sid]
             save_db(db); self.send_response(302); self.send_header("Location", "/admin_panel"); self.end_headers(); return
-        if p == "/admin_panel" and SpiderServer.session == "admin": send_h(get_admin_page(db)); return
-        if p == "/place_order" and SpiderServer.session:
-            sid, qty, link = q.get('sid',[''])[0], int(q.get('qty',['0'])[0]), q.get('link',[''])[0]
-            svc = next((s for s in db["services"] if s['id'] == sid), None); u = db["users"][SpiderServer.session]
-            cost = (qty/1000)*svc['price'] if svc else 999999
-            if svc and u['balance'] >= cost:
-                # إرسال للمزود الخاص بالخدمة المختارة فقط
-                oid = send_to_api(svc['api_url'], svc['api_key'], sid, link, qty)
-                if oid:
-                    u['balance'] -= cost
-                    db["orders"].append({"id": oid, "user": SpiderServer.session, "service": svc['name']})
-                    save_db(db); send_h("<script>alert('تم بنجاح!');location.href='/';</script>")
-                else: send_h("<script>alert('فشل الاتصال بالمزود');location.href='/';</script>")
+
+        if p == "/place_order":
+            sid, qty = q.get('sid',[''])[0], int(q.get('qty',['0'])[0])
+            svc = next((s for s in db["services"] if s['id'] == sid), None)
+            u_data = db["users"][user]; cost = (qty/1000)*svc['price'] if svc else 0
+            if svc and u_data['balance'] >= cost:
+                u_data['balance'] -= cost; u_data['spent'] += cost
+                db["orders"].append({"user": user, "service": svc['name']})
+                save_db(db); send_res("<script>alert('تم بنجاح!');location.href='/';</script>")
+            else: send_res("<script>alert('الرصيد غير كافٍ أو خطأ بالخدمة!');location.href='/';</script>")
             return
-        if p == "/redeem" and SpiderServer.session:
-            code = q.get('c',[''])[0]; found = False
-            for v in db["vouchers"]:
-                if v["code"] == code and len(v["used_by"]) < v["limit"] and SpiderServer.session not in v["used_by"]:
-                    db["users"][SpiderServer.session]["balance"] += v["value"]
-                    v["used_by"].append(SpiderServer.session); found = True; break
-            save_db(db); send_h(f"<script>alert('{'تم الشحن!' if found else 'كود غير صالح'}');location.href='/';</script>")
-            return
-        if p == "/logout": SpiderServer.session = None; self.send_response(302); self.send_header("Location", "/"); self.end_headers(); return
-        if SpiderServer.session: send_h(get_user_page(db, SpiderServer.session))
-        else: send_h(get_auth_page("login"))
+
+        send_res(get_user_page(db, user))
 
 socketserver.TCPServer.allow_reuse_address = True
-with socketserver.TCPServer(("", PORT), SpiderServer) as httpd:
-    print(f"🚀 MULTI-PROVIDER SERVER READY ON PORT {PORT}"); httpd.serve_forever()
+with socketserver.TCPServer(("", PORT), SpiderMasterServer) as httpd:
+    print(f"Server started at {PORT}"); httpd.serve_forever()
     
