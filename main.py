@@ -186,7 +186,7 @@ def get_admin_dashboard(db):
     total_profit = sum(u.get('spent', 0) for u in db['users'].values())
     
     prov_rows = "".join([f"<tr><td>{p['name']}</td><td><span style='color:var(--green)'>نشط</span></td></tr>" for p in db.get('providers', [])])
-    svc_rows = "".join([f"<tr><td>{s['cat']}</td><td>{s['name']}</td><td>{s['price']}$</td><td><a href='/admin_act?act=del_svc&sid={s.get('api_id', s.get('id'))}'>حذف</a></td></tr>" for s in db.get('services', [])])
+    svc_rows = "".join([f"<tr><td>{s.get('cat','عام')}</td><td>{s['name']}</td><td><a href='/admin_act?act=del_svc&sid={s['id']}' style='color:var(--danger)'><i class='fas fa-trash'></i></a></td></tr>" for s in db['services']])
 
     return f"""<!DOCTYPE html><html lang="ar"><head><meta charset="UTF-8">{get_master_style()}</head>
     <body>
@@ -224,19 +224,16 @@ def get_admin_dashboard(db):
             </div>
 
             <div class="card">
-    <h3><i class="fas fa-plus-circle"></i> إضافة خدمة برابط API مباشر</h3>
-    <form action="/admin_act">
-        <input type="hidden" name="act" value="add_svc">
-        <input name="n" placeholder="اسم الخدمة" required>
-        <input name="cat" placeholder="الفئة (مثلاً: انستقرام)" required>
-        <input name="p" type="number" step="0.01" placeholder="السعر لكل 1000" required>
-        <input name="id" placeholder="ID الخدمة في الموقع الأصلي" required>
-        <input name="prov_url" placeholder="رابط API المزود" required>
-        <input name="prov_key" placeholder="API Key (المفتاح)" required>
-        <button class="btn btn-gold" style="width: 100%; margin-top: 10px;">حفظ الخدمة والربط</button>
-    </form>
-</div>
-
+                <h3>إدارة الخدمات والفئات</h3>
+                <form action="/admin_act">
+                    <input type="hidden" name="act" value="add_svc">
+                    <input name="cat" placeholder="الفئة (مثل: إنستقرام، تيك توك)">
+                    <input name="n" placeholder="اسم الخدمة">
+                    <input name="p" placeholder="السعر لكل 1000">
+                    <input name="id" placeholder="ID الخدمة">
+                    <button class="btn btn-gold">إضافة الخدمة للفئة</button>
+                </form>
+                <table><thead><tr><th>الفئة</th><th>الخدمة</th><th>حذف</th></tr></thead><tbody>{svc_rows or "<tr><td colspan='3'>لا يوجد</td></tr>"}</tbody></table>
             </div>
         </div>
     </body></html>"""
@@ -269,22 +266,10 @@ def get_user_page(db, username):
             <div class="card">
                 <h3>طلب خدمة جديدة</h3>
                 <form action="/place_order">
-           <div style="position: relative; width: 100%; margin: 15px 0;">
-    <div onclick="document.getElementById('cat_opts').style.display = (document.getElementById('cat_opts').style.display === 'block' ? 'none' : 'block')" 
-         style="background: rgba(255,255,255,0.05); border: 1.5px solid var(--blue); border-radius: 18px; padding: 18px 25px; color: var(--text); cursor: pointer; display: flex; justify-content: space-between; align-items: center; font-weight: 600;">
-        <span id="cat_txt">-- اختر الفئة (تطبيق) --</span>
-        <i class="fas fa-layer-group" style="color:var(--blue);"></i>
-    </div>
-    
-    <div id="cat_opts" style="position: absolute; top: 110%; left: 0; right: 0; background: #0b132b; border: 1px solid var(--blue); border-radius: 20px; overflow-y: auto; max-height: 200px; display: none; z-index: 1000; box-shadow: 0 10px 30px rgba(0,0,0,0.5);">
-        { "".join([f'''<div onclick="document.getElementById('cat_txt').innerText='{c}'; document.getElementById('category_select').value='{c}'; document.getElementById('cat_opts').style.display='none'; filterServices();" 
-                      style="padding: 15px 25px; cursor: pointer; border-bottom: 1px solid rgba(255,255,255,0.05); font-size: 14px;">
-                      <i class="fas fa-star" style="color:var(--gold); margin-left: 10px; font-size: 10px;"></i> {c}
-                   </div>''' for c in categories]) }
-    </div>
-    <input type="hidden" name="cat" id="category_select">
-</div>
-
+                    <select id="category_select" onchange="filterServices()" style="border: 1.5px solid var(--blue);">
+                        <option value="">-- اختر الفئة (تطبيق) --</option>
+                        {cat_options}
+                    </select>
 
                     <div onclick="toggleMenu('svc_list')" style="background:rgba(0,0,0,0.4); border:1.5px solid var(--gold); padding:16px; border-radius:18px; cursor:pointer; display:flex; justify-content:space-between; margin-top:10px;">
                         <span id="selected_text">-- اختر الخدمة --</span><i class="fas fa-chevron-down"></i>
@@ -322,84 +307,4 @@ class SpiderMasterServer(http.server.BaseHTTPRequestHandler):
 
         def send_res(content, set_c=None):
             self.send_response(200)
-            self.send_header("Content-type","text/html; charset=utf-8")
-            if set_c: self.send_header("Set-Cookie", set_c)
-            self.end_headers()
-            self.wfile.write(content.encode('utf-8'))
-
-        # --- [ معالجة إنشاء حساب جديد - SignUp ] ---
-        if p == "/signup_action":
-            u = q.get('user', [''])[0].strip()
-            pw = q.get('pass', [''])[0].strip()
-            tid = q.get('tele_id', [''])[0].strip()
-            
-            if not u or not pw:
-                send_res("<script>alert('يرجى ملء كافة الحقول!');location.href='/';</script>")
-                return
-            
-            if u in db["users"]:
-                send_res("<script>alert('اسم المستخدم موجود بالفعل!');location.href='/';</script>")
-            else:
-                db["users"][u] = {"pass": pw, "balance": 0.0, "spent": 0.0, "uid": tid, "is_admin": False}
-                save_db(db)
-                send_res("<script>alert('تم إنشاء الحساب بنجاح! يمكنك الدخول الآن');location.href='/';</script>")
-            return
-
-        # --- [ معالجة تسجيل الدخول ] ---
-        if p == "/auth_action":
-            u, pw = q.get('user',[''])[0], q.get('pass',[''])[0]
-            if u in db["users"] and db["users"][u]["pass"] == pw:
-                send_res("<script>location.href='/';</script>", f"session_user={u}; Path=/;")
-            else:
-                send_res("<script>alert('خطأ في البيانات!');location.href='/';</script>")
-            return
-
-        if p == "/logout": 
-            self.send_response(302); self.send_header("Location", "/"); self.send_header("Set-Cookie", "session_user=; Max-Age=0; Path=/;"); self.end_headers(); return
-
-        if not user:
-            send_res(get_login_page()); return
-
-                if p == "/admin_act" and user == "admin":
-            act = q.get('act', [''])[0]
-            if act == "charge":
-                target = q.get('target_user', [''])[0]; amount = float(q.get('amount', ['0'])[0])
-                if target in db["users"]: db["users"][target]["balance"] += amount
-            elif act == "add_svc":
-                new_svc = {
-                    "name": q.get('n', [''])[0],
-                    "cat": q.get('cat', ['عام'])[0],
-                    "price": float(q.get('p', ['0'])[0]),
-                    "api_id": q.get('id', [''])[0],
-                    "api_url": q.get('prov_url', [''])[0],
-                    "api_key": q.get('prov_key', [''])[0]
-                }
-                if "services" not in db: db["services"] = []
-                db["services"].append(new_svc)
-            elif act == "del_svc":
-                sid = q.get('sid', [''])[0]
-                db["services"] = [s for s in db["services"] if s.get('api_id') != sid and s.get('name') != sid]
-            save_db(db); self.send_response(302); self.send_header("Location", "/admin_panel"); self.end_headers(); return
-
-                sid = q.get('sid',[''])[0]
-                db["services"] = [s for s in db["services"] if s['id'] != sid]
-            save_db(db); self.send_response(302); self.send_header("Location", "/admin_panel"); self.end_headers(); return
-
-        if p == "/place_order":
-            sid, qty = q.get('sid',[''])[0], int(q.get('qty',['0'])[0])
-            svc = next((s for s in db["services"] if s['id'] == sid), None)
-            u_data = db["users"][user]; cost = (qty/1000)*svc['price'] if svc else 0
-            if svc and u_data['balance'] >= cost:
-                u_data['balance'] -= cost; u_data['spent'] += cost
-                db["orders"].append({"user": user, "service": svc['name']})
-                save_db(db); send_res("<script>alert('تم الطلب بنجاح!');location.href='/';</script>")
-            else:
-                send_res("<script>alert('فشل الطلب: رصيد غير كافٍ!');location.href='/';</script>")
-            return
-
-        send_res(get_user_page(db, user))
-
-# --- [ تشغيل السيرفر ] ---
-socketserver.TCPServer.allow_reuse_address = True
-with socketserver.TCPServer(("", PORT), SpiderMasterServer) as httpd:
-    print(f"Server started at {PORT}"); httpd.serve_forever()
+            self.send_header("Content-type","text/html;
