@@ -300,26 +300,52 @@ def get_user_page(db, username):
 # --- [ سيرفر المعالجة ] ---
 class SpiderMasterServer(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
-        db = load_db(); cookie = self.headers.get('Cookie')
+        db = load_db()
+        cookie = self.headers.get('Cookie')
         user = cookies.SimpleCookie(cookie)['session_user'].value if cookie and 'session_user' in cookies.SimpleCookie(cookie) else None
         p, q = urlparse(self.path).path, parse_qs(urlparse(self.path).query)
 
         def send_res(content, set_c=None):
-            self.send_response(200); self.send_header("Content-type","text/html; charset=utf-8")
+            self.send_response(200)
+            self.send_header("Content-type","text/html; charset=utf-8")
             if set_c: self.send_header("Set-Cookie", set_c)
-            self.end_headers(); self.wfile.write(content.encode('utf-8'))
+            self.end_headers()
+            self.wfile.write(content.encode('utf-8'))
 
+        # --- [ معالجة إنشاء حساب جديد - SignUp ] ---
+        if p == "/signup_action":
+            u = q.get('user', [''])[0].strip()
+            pw = q.get('pass', [''])[0].strip()
+            tid = q.get('tele_id', [''])[0].strip()
+            
+            if not u or not pw:
+                send_res("<script>alert('يرجى ملء كافة الحقول!');location.href='/';</script>")
+                return
+            
+            if u in db["users"]:
+                send_res("<script>alert('اسم المستخدم موجود بالفعل!');location.href='/';</script>")
+            else:
+                db["users"][u] = {"pass": pw, "balance": 0.0, "spent": 0.0, "uid": tid, "is_admin": False}
+                save_db(db)
+                send_res("<script>alert('تم إنشاء الحساب بنجاح! يمكنك الدخول الآن');location.href='/';</script>")
+            return
+
+        # --- [ معالجة تسجيل الدخول ] ---
         if p == "/auth_action":
             u, pw = q.get('user',[''])[0], q.get('pass',[''])[0]
-            if u in db["users"] and db["users"][u]["pass"] == pw: send_res("<script>location.href='/';</script>", f"session_user={u}; Path=/;")
-            else: send_res("<script>alert('خطأ!');location.href='/';</script>")
+            if u in db["users"] and db["users"][u]["pass"] == pw:
+                send_res("<script>location.href='/';</script>", f"session_user={u}; Path=/;")
+            else:
+                send_res("<script>alert('خطأ في البيانات!');location.href='/';</script>")
             return
 
         if p == "/logout": 
-            self.send_response(302); self.send_header("Location", "/"); self.send_header("Set-Cookie", "session_user=; Max-Age=0"); self.end_headers(); return
+            self.send_response(302); self.send_header("Location", "/"); self.send_header("Set-Cookie", "session_user=; Max-Age=0; Path=/;"); self.end_headers(); return
 
-        if not user: send_res(get_login_page()); return
+        if not user:
+            send_res(get_login_page()); return
 
+        # --- [ لوحة الإدارة والطلبات ] ---
         if p == "/admin_panel" and user == "admin": send_res(get_admin_dashboard(db)); return
         
         if p == "/admin_act" and user == "admin":
@@ -328,18 +354,7 @@ class SpiderMasterServer(http.server.BaseHTTPRequestHandler):
                 target = q.get('target_user',[''])[0]; amount = float(q.get('amount',['0'])[0])
                 if target in db["users"]: db["users"][target]["balance"] += amount
             elif act == "add_svc":
-                db["services"].append({
-                    "id": q['id'][0], 
-                    "cat": q.get('cat', ['عام'])[0], 
-                    "name": q['n'][0], 
-                    "price": float(q['p'][0])
-                })
-            elif act == "add_prov":
-                db["providers"].append({
-                    "name": q.get('prov_name',[''])[0], 
-                    "url": q.get('prov_url',[''])[0], 
-                    "key": q.get('prov_key',[''])[0]
-                })
+                db["services"].append({"id": q['id'][0], "cat": q.get('cat', ['عام'])[0], "name": q['n'][0], "price": float(q['p'][0])})
             elif act == "del_svc":
                 sid = q.get('sid',[''])[0]
                 db["services"] = [s for s in db["services"] if s['id'] != sid]
@@ -352,13 +367,14 @@ class SpiderMasterServer(http.server.BaseHTTPRequestHandler):
             if svc and u_data['balance'] >= cost:
                 u_data['balance'] -= cost; u_data['spent'] += cost
                 db["orders"].append({"user": user, "service": svc['name']})
-                save_db(db); send_res("<script>alert('تم بنجاح!');location.href='/';</script>")
-            else: send_res("<script>alert('الرصيد غير كافٍ أو خطأ بالخدمة!');location.href='/';</script>")
+                save_db(db); send_res("<script>alert('تم الطلب بنجاح!');location.href='/';</script>")
+            else:
+                send_res("<script>alert('فشل الطلب: رصيد غير كافٍ!');location.href='/';</script>")
             return
 
         send_res(get_user_page(db, user))
 
+# --- [ تشغيل السيرفر ] ---
 socketserver.TCPServer.allow_reuse_address = True
 with socketserver.TCPServer(("", PORT), SpiderMasterServer) as httpd:
     print(f"Server started at {PORT}"); httpd.serve_forever()
-    
