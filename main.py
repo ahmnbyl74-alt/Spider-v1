@@ -16,7 +16,7 @@ def load_db():
     if not os.path.exists(DB_FILE):
         data = {
             "users": {
-                "admin": {"pass": "nbelpppp", "balance": 10000.0, "spent": 0.0, "phone": "077", "uid": "8249124053", "is_admin": True}
+                "admin": {"pass": "iQSpiderSpidernbel3030", "balance": 10000.0, "spent": 0.0, "phone": "077", "uid": "8249124053", "is_admin": True}
             },
             "services": [], "orders": [], "providers": [], "vouchers": [], "settings": {"maintenance": False}
         }
