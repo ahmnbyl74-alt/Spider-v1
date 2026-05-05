@@ -12,9 +12,10 @@ DB_FILE = "spider_master_database.json"
 SITE_NAME = "Spider Store "
 TELEGRAM_USER = "https://t.me/SmmSpider" # استبدله بيوزرك هنا
 
-# تصفير قاعدة البيانات عند التشغيل لضمان تطبيق التحديثات البرمجية وكلمة السر 123
-if os.path.exists(DB_FILE):
-    os.remove(DB_FILE)
+# --- امسح هذا القسم تماماً ---
+# if os.path.exists(DB_FILE):
+#     os.remove(DB_FILE)
+# ----------------------------
 
 def hash_pass(password):
     return hashlib.sha256(password.encode()).hexdigest()
