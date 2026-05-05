@@ -689,8 +689,12 @@ class SpiderServer(http.server.BaseHTTPRequestHandler):
 
 # --- [ 5. تشغيل المحرك ] ---
 if __name__ == "__main__":
-    socketserver.TCPServer.allow_reuse_address = True
-    with socketserver.TCPServer(("", PORT), SpiderServer) as httpd:
-        print(f"🚀 السيرفر يعمل الآن على الرابط: http://localhost:{PORT}")
-        httpd.serve_forever()
+    import os
+    # السطر المهم جداً للاستضافة
+    PORT = int(os.environ.get("PORT", 8080))
     
+    socketserver.TCPServer.allow_reuse_address = True
+    # لاحظ تغيير العنوان إلى "0.0.0.0" بدلاً من الفراغ
+    with socketserver.TCPServer(("0.0.0.0", PORT), SpiderServer) as httpd:
+        print(f"🚀 السيرفر يعمل الآن على المنفذ: {PORT}")
+        httpd.serve_forever()
