@@ -1,88 +1,35 @@
 import http.server
+import os
 import socketserver
 import json
-import os
 import hashlib
-import secrets
-import re
 from urllib.parse import parse_qs, urlparse
 from http import cookies
-from datetime import datetime, timedelta
-import uuid
 
 # --- [ 1. الإعدادات والبيانات الأساسية ] ---
-PORT = int(os.environ.get("PORT", 5000))
+PORT = int(os.environ.get("PORT", 8080))
 DB_FILE = "spider_master_database.json"
 SITE_NAME = "Spider Store Pro"
-TELEGRAM_LINK = "https://t.me/nbel3030"
-ADMIN_SECRET = "iQSpiderSpidernbel3030"
+TELEGRAM_USER = "iQSpider" # استبدله بيوزرك هنا
 
-# --- [ 2. وظائف الأمان والتشفير ] ---
-def hash_password(password):
-    """تشفير كلمة المرور باستخدام SHA-256"""
-    salt = secrets.token_hex(16)
-    pwd_hash = hashlib.sha256((password + salt).encode()).hexdigest()
-    return f"{pwd_hash}${salt}"
+# تصفير قاعدة البيانات عند التشغيل لضمان تطبيق التحديثات البرمجية وكلمة السر 123
+if os.path.exists(DB_FILE):
+    os.remove(DB_FILE)
 
-def verify_password(password, hashed):
-    """التحقق من كلمة المرور"""
-    try:
-        pwd_hash, salt = hashed.split('$')
-        return hashlib.sha256((password + salt).encode()).hexdigest() == pwd_hash
-    except:
-        return False
+def hash_pass(password):
+    return hashlib.sha256(password.encode()).hexdigest()
 
-def validate_email(email):
-    """التحقق من صحة البريد الإلكتروني"""
-    pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
-    return re.match(pattern, email) is not None
-
-def validate_phone(phone):
-    """التحقق من صحة رقم الهاتف"""
-    pattern = r'^[0-9\+\-\s]{7,20}$'
-    return re.match(pattern, phone) is not None
-
-def generate_token():
-    """توليد رمز فريد"""
-    return secrets.token_urlsafe(32)
-
-# --- [ 3. وظائف قاعدة البيانات ] ---
+# --- [ 2. وظائف قاعدة البيانات ] ---
 def load_db():
-    """تحميل قاعدة البيانات"""
     if not os.path.exists(DB_FILE):
         data = {
-            "users": {
-                "admin": {
-                    "pass": hash_password("iQSpiderSpidernbel3030"),
-                    "balance": 1000.0,
-                    "spent": 0.0,
-                    "phone": "000",
-                    "email": "admin@spiderstore.com",
-                    "is_admin": True,
-                    "wallet": 0.0,
-                    "verified": True,
-                    "created_at": datetime.now().isoformat()
-                }
-            },
-            "services": [],
-            "orders": [],
-            "transactions": [],
-            "coupons": [],
-            "notifications": {},
-            "stats": {
-                "total_profit": 0.0,
-                "total_orders": 0,
-                "total_users": 1
-            },
-            "settings": {
-                "site_announcement": "مرحباً بكم في متجر سبايدر برو!",
-                "min_balance": 1.0,
-                "commission_rate": 0.1
-            }
+            "users": {"admin": {"pass": hash_pass("123"), "balance": 1000.0, "is_admin": True, "phone": "000"}},
+            "services": [], 
+            "orders": [], 
+            "announcement": "مرحباً بك في عالم الفخامة الرقمية!"
         }
         save_db(data)
         return data
-    
     with open(DB_FILE, 'r', encoding='utf-8') as f:
         try:
             return json.load(f)
@@ -90,507 +37,326 @@ def load_db():
             return load_db()
 
 def save_db(data):
-    """حفظ قاعدة البيانات"""
     with open(DB_FILE, 'w', encoding='utf-8') as f:
         json.dump(data, f, indent=4, ensure_ascii=False)
 
-# --- [ 4. وظائف المحفظة والدفع ] ---
-def add_transaction(db, username, amount, transaction_type, description=""):
-    """إضافة معاملة مالية"""
-    transaction = {
-        "id": str(uuid.uuid4()),
-        "user": username,
-        "amount": amount,
-        "type": transaction_type,  # deposit, withdrawal, order, refund
-        "description": description,
-        "timestamp": datetime.now().isoformat(),
-        "status": "completed"
-    }
-    db["transactions"].append(transaction)
-    return transaction
-
-def add_notification(db, username, title, message, notification_type="info"):
-    """إضافة إشعار للمستخدم"""
-    if username not in db["notifications"]:
-        db["notifications"][username] = []
-    
-    notification = {
-        "id": str(uuid.uuid4()),
-        "title": title,
-        "message": message,
-        "type": notification_type,  # info, success, warning, error
-        "timestamp": datetime.now().isoformat(),
-        "read": False
-    }
-    db["notifications"][username].append(notification)
-    return notification
-
-def apply_coupon(db, coupon_code, user_balance):
-    """تطبيق كود خصم"""
-    for coupon in db.get("coupons", []):
-        if coupon["code"] == coupon_code and coupon["active"]:
-            if coupon["type"] == "percentage":
-                discount = user_balance * (coupon["value"] / 100)
-            else:
-                discount = coupon["value"]
-            return discount, coupon
-    return 0, None
-
-# --- [ 5. وظائف نظام الطلبات ] ---
-def create_order(db, username, service_id, link, quantity, coupon_code=""):
-    """إنشاء طلب جديد"""
-    user = db["users"].get(username, {})
-    service = next((s for s in db["services"] if s["id"] == service_id), None)
-    
-    if not service:
-        return {"status": "error", "message": "الخدمة غير موجودة"}
-    
-    # التحقق من الحدود
-    try:
-        qty = int(quantity)
-    except:
-        return {"status": "error", "message": "الكمية غير صحيحة"}
-    
-    if qty < int(service["min"]) or qty > int(service["max"]):
-        return {"status": "error", "message": f"الكمية يجب أن تكون بين {service['min']} و {service['max']}"}
-    
-    # حساب التكلفة
-    cost = (service["price"] / 1000) * qty
-    
-    # تطبيق الكود
-    discount = 0
-    if coupon_code:
-        discount, coupon = apply_coupon(db, coupon_code, cost)
-    
-    final_cost = cost - discount
-    
-    # التحقق من الرصيد
-    if user.get("balance", 0) < final_cost:
-        return {"status": "error", "message": "الرصيد غير كافي"}
-    
-    # إنشاء الطلب
-    order = {
-        "id": str(uuid.uuid4()),
-        "user": username,
-        "service_id": service_id,
-        "service_name": service["name"],
-        "link": link,
-        "quantity": qty,
-        "cost": cost,
-        "discount": discount,
-        "final_cost": final_cost,
-        "status": "pending",  # pending, processing, completed, failed
-        "progress": 0,
-        "created_at": datetime.now().isoformat(),
-        "completed_at": None
-    }
-    
-    # خصم من الرصيد
-    db["users"][username]["balance"] -= final_cost
-    db["users"][username]["spent"] += final_cost
-    
-    db["orders"].append(order)
-    
-    # إضافة معاملة
-    add_transaction(db, username, final_cost, "order", f"طلب خدمة: {service['name']}")
-    
-    # إضافة إشعار
-    add_notification(db, username, "تم تأكيد الطلب ✅", 
-                    f"تم قبول طلبك بنجاح - الكمية: {qty}",
-                    "success")
-    
-    # تحديث الإحصائيات
-    db["stats"]["total_orders"] += 1
-    db["stats"]["total_profit"] += final_cost * (db["settings"].get("commission_rate", 0.1))
-    
-    save_db(db)
-    
-    return {
-        "status": "success",
-        "message": "تم إنشاء الطلب بنجاح",
-        "order_id": order["id"],
-        "order": order
-    }
-
-# --- [ 6. التنسيق والتصاميم ] ---
+# --- [ 3. التصميم المتكامل (UI/UX) ] ---
 def get_master_style():
-    """نمط CSS موحد"""
-    return """
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    return f"""
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;700;900&display=swap');
-        :root {
-            --accent: #f39c12;
-            --bg: #05080f;
-            --card: rgba(25, 32, 50, 0.7);
-            --border: rgba(243, 156, 18, 0.2);
-            --danger: #ff4757;
-            --success: #2ecc71;
-            --warning: #f39c12;
-            --info: #3498db;
-        }
-        * {
-            box-sizing: border-box;
-            font-family: 'Cairo', sans-serif;
-        }
-        body {
-            margin: 0;
-            background: var(--bg);
-            color: #fff;
-            direction: rtl;
-            padding-bottom: 90px;
-            overflow-x: hidden;
-        }
-        body::before {
-            content: '';
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: linear-gradient(125deg, #05080f 0%, #1e3c72 100%);
-            z-index: -2;
-        }
-        .header {
-            height: 70px;
-            background: rgba(5, 8, 15, 0.85);
-            backdrop-filter: blur(15px);
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            padding: 0 20px;
-            border-bottom: 1px solid var(--border);
-            position: sticky;
-            top: 0;
-            z-index: 1000;
-        }
-        .stat-banner {
-            background: rgba(243, 156, 18, 0.15);
-            border: 1px solid var(--border);
-            backdrop-filter: blur(10px);
-            margin: 15px;
-            padding: 20px;
-            border-radius: 25px;
-            display: flex;
-            justify-content: space-around;
-            flex-wrap: wrap;
-        }
-        .stat-item {
-            text-align: center;
-            flex: 1;
-            min-width: 100px;
-        }
-        .stat-item b {
-            color: var(--accent);
-            display: block;
-            font-size: 1.2rem;
-        }
-        .stat-item span {
-            font-size: 0.8rem;
-            opacity: 0.7;
-        }
-        .card {
-            background: var(--card);
-            border: 1px solid var(--border);
-            border-radius: 25px;
-            padding: 20px;
-            margin: 15px;
-            backdrop-filter: blur(10px);
-        }
-        input, select, textarea {
-            width: 100%;
-            padding: 14px;
-            margin-top: 12px;
-            border-radius: 15px;
-            border: 1px solid rgba(255,255,255,0.1);
-            background: rgba(0,0,0,0.4);
-            color: #fff;
-            outline: none;
-        }
-        input::placeholder, select::placeholder {
-            color: rgba(255,255,255,0.5);
-        }
-        .btn {
-            width: 100%;
-            padding: 14px;
-            margin-top: 12px;
-            border-radius: 15px;
-            border: none;
-            font-weight: 900;
-            cursor: pointer;
-            transition: 0.3s;
-        }
-        .btn-send {
-            background: linear-gradient(45deg, var(--accent), #e67e22);
-            color: #000;
-        }
-        .btn-send:hover {
-            transform: scale(1.02);
-            box-shadow: 0 10px 30px rgba(243, 156, 18, 0.3);
-        }
-        .btn-danger {
-            background: var(--danger);
-            color: white;
-        }
-        .btn-success {
-            background: var(--success);
-            color: white;
-        }
-        .bottom-nav {
-            position: fixed;
-            bottom: 15px;
-            left: 15px;
-            right: 15px;
-            height: 65px;
-            background: rgba(5, 8, 15, 0.95);
-            backdrop-filter: blur(20px);
-            display: flex;
-            justify-content: space-around;
-            align-items: center;
-            border-radius: 20px;
-            border: 1px solid var(--border);
-            z-index: 999;
-        }
-        .nav-item {
-            color: #666;
-            text-decoration: none;
-            font-size: 11px;
-            text-align: center;
-            flex: 1;
-        }
-        .nav-item.active {
-            color: var(--accent);
-        }
-        .nav-item i {
-            font-size: 20px;
-            display: block;
-        }
-        .cost-badge {
-            background: rgba(243, 156, 18, 0.1);
-            border: 1px dashed var(--accent);
-            padding: 15px;
-            border-radius: 15px;
-            margin-top: 10px;
-            display: none;
-        }
-        .alert {
-            padding: 12px;
-            border-radius: 10px;
-            margin-bottom: 15px;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-        .alert-success {
-            background: rgba(46, 204, 113, 0.1);
-            border: 1px solid var(--success);
-            color: var(--success);
-        }
-        .alert-error {
-            background: rgba(255, 71, 87, 0.1);
-            border: 1px solid var(--danger);
-            color: var(--danger);
-        }
-        .alert-info {
-            background: rgba(52, 152, 219, 0.1);
-            border: 1px solid var(--info);
-            color: var(--info);
-        }
-        .notification-badge {
-            position: absolute;
-            top: 15px;
-            left: 15px;
-            background: var(--danger);
-            color: white;
-            border-radius: 50%;
-            width: 24px;
-            height: 24px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 12px;
-            font-weight: bold;
-        }
-        .order-item {
-            background: rgba(0, 0, 0, 0.2);
-            border: 1px solid var(--border);
-            border-radius: 15px;
-            padding: 15px;
-            margin: 10px 0;
-        }
-        .order-status {
-            display: inline-block;
-            padding: 5px 10px;
-            border-radius: 10px;
-            font-size: 0.8rem;
-            font-weight: bold;
-            margin-top: 10px;
-        }
-        .order-status.pending {
-            background: rgba(243, 156, 18, 0.3);
-            color: var(--accent);
-        }
-        .order-status.processing {
-            background: rgba(52, 152, 219, 0.3);
-            color: var(--info);
-        }
-        .order-status.completed {
-            background: rgba(46, 204, 113, 0.3);
-            color: var(--success);
-        }
-        .order-status.failed {
-            background: rgba(255, 71, 87, 0.3);
-            color: var(--danger);
-        }
-        .modal {
-            display: none;
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(0,0,0,0.9);
-            z-index: 2000;
-            align-items: center;
-            justify-content: center;
-            backdrop-filter: blur(10px);
-        }
-        .modal.show {
-            display: flex;
-        }
-        .modal-content {
-            background: #0a0f1d;
-            padding: 30px;
-            border-radius: 25px;
-            width: 90%;
-            max-width: 500px;
-            border: 1px solid var(--accent);
-            max-height: 90vh;
-            overflow-y: auto;
-        }
+        :root {{ --accent: #f39c12; --glass: rgba(255, 255, 255, 0.1); --border: rgba(255, 255, 255, 0.15); }}
+        * {{ box-sizing: border-box; font-family: 'Cairo', sans-serif; transition: 0.3s; }}
+        body {{ 
+            margin: 0; background: linear-gradient(135deg, #0f2027, #203a43, #2c5364); 
+            background-attachment: fixed; color: #fff; direction: rtl; padding-bottom: 120px; min-height: 100vh;
+        }}
+        .header {{ 
+            height: 75px; background: rgba(0, 0, 0, 0.4); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+            display: flex; align-items: center; justify-content: space-between; 
+            padding: 0 20px; border-bottom: 1px solid var(--border); position: sticky; top:0; z-index:1000; 
+        }}
+        .card {{ 
+            background: var(--glass); border: 1px solid var(--border); border-radius: 28px; 
+            padding: 22px; margin: 15px; backdrop-filter: blur(15px); -webkit-backdrop-filter: blur(15px);
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3);
+        }}
+        
+        /* قائمة الإعدادات المتكاملة */
+        .settings-group {{ margin-bottom: 20px; }}
+        .settings-title {{ font-size: 14px; color: var(--accent); margin: 0 15px 10px; font-weight: bold; opacity: 0.8; }}
+        .settings-list {{ background: rgba(255,255,255,0.03); border-radius: 20px; overflow: hidden; border: 1px solid var(--border); margin: 0 15px; }}
+        .settings-item {{ 
+            display: flex; align-items: center; padding: 18px; text-decoration: none; 
+            color: #fff; border-bottom: 1px solid var(--border); 
+        }}
+        .settings-item:last-child {{ border: none; }}
+        .settings-item:active {{ background: rgba(255,255,255,0.1); }}
+        .settings-item i {{ width: 35px; font-size: 20px; color: var(--accent); }}
+        .settings-item .text {{ flex: 1; font-size: 15px; font-weight: 500; }}
+        .settings-item .chevron {{ font-size: 12px; opacity: 0.3; }}
+
+        /* المدخلات والأزرار الكبيرة */
+        input, select, button {{ 
+            width: 100%; padding: 18px; margin-top: 15px; border-radius: 20px; 
+            border: 1px solid var(--border); background: rgba(255, 255, 255, 0.05); color: #fff; outline: none;
+            font-size: 16px; font-weight: bold;
+        }}
+        .btn-send {{ 
+            background: linear-gradient(45deg, var(--accent), #e67e22); 
+            color: #000; font-weight: 900; border: none; cursor: pointer;
+            box-shadow: 0 6px 20px rgba(243, 156, 18, 0.4);
+        }}
+        
+        .floating-tg {{
+            position: fixed; bottom: 125px; left: 25px; width: 65px; height: 65px;
+            background: linear-gradient(45deg, #0088cc, #00aaff); border-radius: 50%; 
+            display: flex; align-items: center; justify-content: center; color: white; 
+            font-size: 32px; z-index: 3000; box-shadow: 0 8px 25px rgba(0,136,204,0.5); 
+            text-decoration: none; animation: pulse 2s infinite;
+        }}
+        @keyframes pulse {{ 0% {{ transform: scale(1); }} 50% {{ transform: scale(1.08); }} 100% {{ transform: scale(1); }} }}
+
+        .bottom-nav {{ 
+            position: fixed; bottom: 25px; left: 20px; right: 20px; 
+            height: 85px; background: rgba(0, 0, 0, 0.7); backdrop-filter: blur(25px);
+            display: flex; justify-content: space-around; align-items: center; 
+            border-radius: 35px; border: 1px solid var(--border); z-index: 2000;
+        }}
+        .nav-item {{ color: rgba(255,255,255,0.4); text-decoration: none; font-size: 13px; text-align: center; flex:1; }}
+        .nav-item.active {{ color: var(--accent); text-shadow: 0 0 10px var(--accent); }}
+        .nav-item i {{ font-size: 28px; display: block; margin-bottom: 5px; }}
+        
+        .stats-grid {{ display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin: 0 15px; }}
+        .stat-item {{ background: var(--glass); border: 1px solid var(--border); border-radius: 20px; padding: 15px; text-align: center; }}
+        .stat-item i {{ color: var(--accent); display: block; margin-bottom: 8px; font-size: 22px; }}
+        .stat-label {{ font-size: 11px; color: rgba(255,255,255,0.6); }}
+        .stat-value {{ font-size: 16px; font-weight: bold; }}
+
+        .badge {{ background: var(--accent); color: #000; padding: 4px 12px; border-radius: 12px; font-weight: bold; font-size: 13px; }}
+        .order-row {{ border-bottom: 1px solid var(--border); padding: 18px 0; display: flex; justify-content: space-between; align-items: center; }}
     </style>
+    <a href="https://t.me/{TELEGRAM_USER}" class="floating-tg" target="_blank"><i class="fab fa-telegram-plane"></i></a>
     """
 
-def get_welcome_page(error="", success=""):
-    """صفحة تسجيل الدخول والتسجيل"""
-    error_msg = f"<div class='alert alert-error'><i class='fas fa-exclamation-circle'></i> {error}</div>" if error else ""
-    success_msg = f"<div class='alert alert-success'><i class='fas fa-check-circle'></i> {success}</div>" if success else ""
+# --- [ 4. الواجهات ] ---
+
+def get_welcome_page(error=""):
+    return f"""<!DOCTYPE html><html lang="ar"><head><meta charset="UTF-8">{get_master_style()}</head>
+    <body style="display:flex; flex-direction:column; align-items:center; justify-content:center;">
+        <div style="text-align:center; margin: 40px 0;">
+            <i class="fas fa-spider" style="font-size:80px; color:var(--accent); filter: drop-shadow(0 0 15px var(--accent));"></i>
+            <h1 style="margin:10px 0; font-size:30px;">{SITE_NAME}</h1>
+        </div>
+        <div class="card" id="login-box" style="width:92%; max-width:400px;">
+            <h3 style="text-align:center; margin-top:0;">تسجيل الدخول</h3>
+            {f'<p style="color:#ff4757; text-align:center; font-size:14px; background:rgba(255,71,87,0.1); padding:10px; border-radius:15px;">{error}</p>' if error else ''}
+            <form action="/auth">
+                <input type="text" name="user" placeholder="اسم المستخدم" required>
+                <input type="password" name="pass" placeholder="كلمة المرور" required>
+                <button type="submit" class="btn-send">دخول الحساب</button>
+            </form>
+            <p style="text-align:center; margin-top:20px; font-size:14px;">ليس لديك حساب؟ <a href="javascript:toggleForm()" style="color:var(--accent); text-decoration:none;">سجل الآن</a></p>
+        </div>
+        <div class="card" id="reg-box" style="width:92%; max-width:400px; display:none;">
+            <h3 style="text-align:center; margin-top:0;">حساب جديد</h3>
+            <form action="/register">
+                <input type="text" name="nu" placeholder="اسم المستخدم" required>
+                <input type="password" name="np" placeholder="كلمة المرور" required>
+                <input type="tel" name="ph" placeholder="رقم الهاتف" required>
+                <button type="submit" class="btn-send">تأكيد التسجيل</button>
+            </form>
+            <p style="text-align:center; margin-top:20px; font-size:14px;">لديك حساب؟ <a href="javascript:toggleForm()" style="color:var(--accent); text-decoration:none;">سجل دخولك</a></p>
+        </div>
+        <script>function toggleForm(){{ const l=document.getElementById('login-box'), r=document.getElementById('reg-box'); l.style.display=l.style.display==='none'?'block':'none'; r.style.display=r.style.display==='none'?'block':'none'; }}</script>
+    </body></html>"""
+
+def get_orders_page(db, user):
+    orders = [o for o in db.get("orders", []) if o.get('user') == user]
+    orders_html = ""
+    for o in reversed(orders):
+        status_color = "#2ecc71" if o['status'] == "مكتمل" else "#f39c12"
+        orders_html += f"""
+        <div class="order-row">
+            <div>
+                <div style="font-weight:bold;">{o['svc']}</div>
+                <div style="font-size:12px; opacity:0.6;">الكمية: {o['qty']} | التكلفة: ${o['cost']:.2f}</div>
+            </div>
+            <div style="color:{status_color}; font-weight:bold; font-size:14px;">{o['status']}</div>
+        </div>"""
     
+    if not orders_html:
+        orders_html = "<p style='text-align:center; opacity:0.5; margin-top:50px;'>ليس لديك طلبات سابقة</p>"
+
+    return f"""<!DOCTYPE html><html lang="ar"><head><meta charset="UTF-8">{get_master_style()}</head><body>
+        <div class="header">
+            <div style="font-weight:900; color:var(--accent); font-size:22px;">سجل طلباتي</div>
+            <a href="/" style="color:white; font-size:24px;"><i class="fas fa-times"></i></a>
+        </div>
+        <div class="card">
+            {orders_html}
+        </div>
+        <div class="bottom-nav">
+            <a href="/" class="nav-item"><i class="fas fa-home"></i>الرئيسية</a>
+            <a href="/settings" class="nav-item"><i class="fas fa-cog"></i>الإعدادات</a>
+        </div>
+    </body></html>"""
+
+
+def get_settings_page(db, user):
+    u = db["users"][user]
+    # زر الإدارة يظهر فقط للأدمن
+    admin_item = f"""<a href="/admin_panel" class="settings-item"><i class="fas fa-user-shield"></i><span class="text">لوحة التحكم للإدارة</span><i class="fas fa-chevron-left chevron"></i></a>""" if u.get('is_admin') else ""
+    
+    return f"""<!DOCTYPE html><html lang="ar"><head><meta charset="UTF-8">{get_master_style()}</head><body>
+        <div class="header">
+            <div style="font-weight:900; color:var(--accent); font-size:22px;">{SITE_NAME}</div>
+            <a href="/" style="color:white; font-size:24px;"><i class="fas fa-times"></i></a>
+        </div>
+        
+        <div class="card" style="text-align:center;">
+            <div style="width:80px; height:80px; background:rgba(243,156,18,0.1); border-radius:50%; display:flex; align-items:center; justify-content:center; margin:0 auto 15px; border:1px solid var(--accent);"><i class="fas fa-user" style="font-size:35px; color:var(--accent);"></i></div>
+            <h2 style="margin:0;">{user}</h2>
+            <div class="badge" style="margin-top:10px;">الرصيد: ${u['balance']:.2f}</div>
+        </div>
+
+        <div class="settings-group">
+            <div class="settings-title">الحساب والمالية</div>
+            <div class="settings-list">
+                <a href="/order_history" class="settings-item"><i class="fas fa-history"></i><span class="text">سجل طلباتي</span><i class="fas fa-chevron-left chevron"></i></a>
+                <a href="https://t.me/{TELEGRAM_USER}" class="settings-item"><i class="fas fa-wallet"></i><span class="text">شحن الرصيد</span><i class="fas fa-chevron-left chevron"></i></a>
+                {admin_item}
+            </div>
+        </div>
+
+        <div class="settings-group">
+            <div class="settings-title">الدعم والمعلومات</div>
+            <div class="settings-list">
+                <a href="https://t.me/{TELEGRAM_USER}" target="_blank" class="settings-item"><i class="fab fa-telegram-plane"></i><span class="text">قناتنا على التليجرام</span><i class="fas fa-chevron-left chevron"></i></a>
+                <a href="/terms" class="settings-item"><i class="fas fa-info-circle"></i><span class="text">شروط الاستخدام</span><i class="fas fa-chevron-left chevron"></i></a>
+            </div>
+        </div>
+
+        <div class="settings-group" style="margin-bottom:120px;">
+            <div class="settings-list">
+                <a href="/logout" class="settings-item" style="color:#ff4757;"><i class="fas fa-sign-out-alt" style="color:#ff4757;"></i><span class="text">تسجيل الخروج</span></a>
+            </div>
+        </div>
+
+        <div class="bottom-nav">
+            <a href="/" class="nav-item"><i class="fas fa-home"></i>الرئيسية</a>
+            <a href="https://t.me/{TELEGRAM_USER}" class="nav-item"><i class="fab fa-telegram"></i>الدعم الفني</a>
+        </div>
+    </body></html>"""
+
+
+def get_admin_page(db):
+    # حساب الإحصائيات
+    users = db.get("users", {})
+    orders = db.get("orders", [])
+    services = db.get("services", [])
+    providers = db.get("providers", [])
+    
+    # حساب الأرباح وإجمالي أرصدة المستخدمين
+    total_profit = sum(float(o.get('cost', 0)) for o in orders)
+    total_balances = sum(float(u.get('balance', 0)) for u in users.values())
+    
+    # حالة الموقع
+    is_active = db.get("is_active", True)
+    status_text = "✅ الموقع متصل" if is_active else "❌ وضع الصيانة"
+    btn_color = "#2ecc71" if not is_active else "#e74c3c"
+
     return f"""
     <!DOCTYPE html>
-    <html lang="ar">
+    <html lang="ar" dir="rtl">
     <head>
-        {get_master_style()}
-        <title>{SITE_NAME} | تسجيل الدخول</title>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+        <style>
+            @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;700;900&display=swap');
+            :root {{ --accent: #f39c12; --glass: rgba(255, 255, 255, 0.08); --border: rgba(255, 255, 255, 0.1); }}
+            * {{ box-sizing: border-box; font-family: 'Cairo', sans-serif; }}
+            body {{ margin: 0; background: #0f172a; color: #fff; padding: 20px; }}
+            .card {{ background: var(--glass); border: 1px solid var(--border); border-radius: 20px; padding: 20px; margin-bottom: 20px; backdrop-filter: blur(10px); }}
+            .grid {{ display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }}
+            .stat {{ background: rgba(0,0,0,0.2); padding: 15px; border-radius: 15px; text-align: center; border-bottom: 3px solid var(--accent); }}
+            input, select, button {{ width: 100%; padding: 12px; margin: 8px 0; border-radius: 10px; border: 1px solid var(--border); background: rgba(255,255,255,0.05); color: #fff; }}
+            .btn-action {{ background: var(--accent); color: #000; font-weight: bold; border: none; cursor: pointer; }}
+            .user-row {{ display: flex; justify-content: space-between; align-items: center; padding: 10px; border-bottom: 1px solid var(--border); }}
+            .search-box {{ background: #fff !important; color: #000 !important; font-weight: bold; }}
+        </style>
     </head>
     <body>
-        <div class="header">
-            <div style="font-weight:900; color:var(--accent); font-size:20px;">
-                <i class="fas fa-bolt"></i> {SITE_NAME}
-            </div>
-            <div></div>
+        <h2 style="text-align:center;"><i class="fas fa-user-shield"></i> لوحة الإدارة</h2>
+
+        <div class="grid">
+            <div class="stat"><i class="fas fa-wallet"></i><br>الأرباح<br><b>${total_profit:.2f}</b></div>
+            <div class="stat"><i class="fas fa-users"></i><br>الأعضاء<br><b>{len(users)}</b></div>
+            <div class="stat"><i class="fas fa-coins"></i><br>إجمالي الأرصدة<br><b>${total_balances:.2f}</b></div>
+            <div class="stat"><i class="fas fa-shopping-bag"></i><br>الطلبات<br><b>{len(orders)}</b></div>
         </div>
-        
-        <div style="display:flex; flex-direction:column; align-items:center; margin-top:40px;">
-            <div class="card" style="width:90%; max-width:400px;">
-                <h2 style="text-align:center; margin-bottom:25px; font-weight:900;">
-                    <i class="fas fa-shield-alt"></i> الدخول للمنصة
-                </h2>
-                {error_msg} {success_msg}
-                <form action="/auth">
-                    <input type="text" name="user" placeholder="👤 اسم المستخدم" required>
-                    <input type="password" name="pass" placeholder="🔐 كلمة المرور" required>
-                    <button type="submit" class="btn btn-send">دخول الآمان <i class="fas fa-arrow-left"></i></button>
-                </form>
-                <button class="btn" style="background: rgba(243, 156, 18, 0.2); border: 1px solid var(--accent); color: var(--accent); margin-top: 15px;" onclick="openRegisterModal()">
-                    ✨ إنشاء حساب جديد
-                </button>
+
+        <div class="card" style="text-align:center; margin-top:20px;">
+            <h4>حالة الموقع حالياً: <span style="color:var(--accent)">{status_text}</span></h4>
+            <a href="/admin_action?type=toggle_site"><button style="background:{btn_color}; color:white;">تبديل حالة الموقع</button></a>
+        </div>
+
+   <div class="card">
+    <h4><i class="fas fa-magic"></i> إضافة خدمة تلقائية (API)</h4>
+    <form action="/admin_action" method="GET">
+        <input type="hidden" name="type" value="add_full_svc">
+        <input name="n" placeholder="اسم الخدمة" required>
+        <input name="c" placeholder="الفئة / القسم" required>
+        <input type="number" step="0.01" name="p" placeholder="السعر لكل 1000" required>
+        <input name="sid" placeholder="ID الخدمة عند المزود" required>
+        <input name="url" placeholder="رابط API المزود" required>
+        <input name="key" placeholder="API KEY المزود" required>
+        <button class="btn-action" style="background:#f39c12;">حفظ وإضافة الخدمة</button>
+    </form>
+</div>
+
+
+        <div class="card">
+            <h4><i class="fas fa-server"></i> نظام المزودين (يدوي)</h4>
+            <form action="/admin_action">
+                <input type="hidden" name="type" value="add_prov">
+                <input name="n" placeholder="اسم المزود" required>
+                <input name="u" placeholder="رابط API المزود" required>
+                <input name="k" placeholder="API KEY" required>
+                <button class="btn-action" style="background:#34495e; color:white;">ربط المزود</button>
+            </form>
+        </div>
+
+        <div class="card">
+            <h4><i class="fas fa-users-cog"></i> إدارة أرصدة الأعضاء</h4>
+            <input type="text" id="userInput" class="search-box" onkeyup="searchUsers()" placeholder="🔍 ابحث عن اسم المستخدم...">
+            <div id="userList" style="max-height: 250px; overflow-y: auto;">
+                {"".join([f'''
+                <div class="user-row" data-name="{name}">
+                    <span>{name}<br><small>${u['balance']:.2f}</small></span>
+                    <form action="/admin_action" style="display:flex; gap:5px;">
+                        <input type="hidden" name="type" value="adj_bal">
+                        <input type="hidden" name="u" value="{name}">
+                        <input type="number" name="a" placeholder="المبلغ" style="width:70px; margin:0; padding:5px;">
+                        <button name="mode" value="plus" style="width:35px; background:#2ecc71; margin:0;">+</button>
+                        <button name="mode" value="minus" style="width:35px; background:#e74c3c; margin:0;">-</button>
+                    </form>
+                </div>''' for name, u in users.items()])}
             </div>
         </div>
-        
-        <div id="regModal" class="modal">
-            <div class="modal-content">
-                <h3 style="text-align:center; color:var(--accent); margin-bottom:20px;">
-                    <i class="fas fa-user-plus"></i> فتح حساب جديد
-                </h3>
-                <form action="/register">
-                    <input type="text" name="new_user" placeholder="👤 اسم المستخدم" required>
-                    <input type="email" name="email" placeholder="📧 البريد الإلكتروني" required>
-                    <input type="tel" name="phone" placeholder="📱 رقم الهاتف" required>
-                    <input type="password" name="new_pass" placeholder="🔐 كلمة المرور" required>
-                    <input type="password" name="confirm_pass" placeholder="🔐 تأكيد كلمة المرور" required>
-                    <button type="submit" class="btn btn-send">تأكيد البيانات</button>
-                    <button type="button" class="btn" style="background: var(--danger);" onclick="closeRegisterModal()">إلغاء</button>
-                </form>
+
+        <div class="card">
+            <h4><i class="fas fa-trash-alt"></i> حذف الخدمات</h4>
+            <div style="max-height: 200px; overflow-y: auto;">
+                {"".join([f'<div class="user-row"><span>{s["name"]}</span><a href="/admin_action?type=del_svc&id={s["id"]}" style="color:#ff4757; text-decoration:none;">حذف</a></div>' for s in services])}
             </div>
         </div>
-        
+
         <script>
-            function openRegisterModal() {{ document.getElementById('regModal').classList.add('show'); }}
-            function closeRegisterModal() {{ document.getElementById('regModal').classList.remove('show'); }}
+            function searchUsers() {{
+                let input = document.getElementById('userInput').value.toLowerCase();
+                let rows = document.querySelectorAll('.user-row[data-name]');
+                rows.forEach(row => {{
+                    let name = row.getAttribute('data-name').toLowerCase();
+                    row.style.display = name.includes(input) ? "flex" : "none";
+                }});
+            }}
         </script>
     </body>
     </html>
     """
 
-def get_user_page(db, username):
-    """الصفحة الرئيسية للمستخدم"""
-    u = db["users"].get(username, {})
-    services = db.get("services", [])
-    cats = sorted(list(set([s.get('cat', 'عام') for s in services])))
-    
-    unread_notif = len([n for n in db.get("notifications", {}).get(username, []) if not n.get("read")])
-    notif_badge = f'<div class="notification-badge">{unread_notif}</div>' if unread_notif > 0 else ""
-    
-    return f"""
-    <!DOCTYPE html>
-    <html lang="ar">
-    <head>
-        {get_master_style()}
-        <title>{SITE_NAME} | الرئيسية</title>
-    </head>
-    <body>
+
+def get_user_page(db, user):
+    u = db["users"][user]
+    svcs, orders = db.get("services", []), db.get("orders", [])
+    user_orders = [o for o in orders if o.get('user') == user]
+    cats = sorted(list(set([s['cat'] for s in svcs])))
+
+    return f"""<!DOCTYPE html><html lang="ar"><head><meta charset="UTF-8">{get_master_style()}</head><body>
         <div class="header">
-            <a href="/notifications" style="color:white; position:relative; text-decoration:none; font-size:20px;">
-                <i class="fas fa-bell"></i>
-                {notif_badge}
-            </a>
-            <div style="font-weight:900; color:var(--accent); font-size:20px;">{SITE_NAME}</div>
-            <a href="/logout" style="color:var(--danger); text-decoration:none; font-size:18px;">
-                <i class="fas fa-power-off"></i>
-            </a>
-        </div>
-        
-        <div class="stat-banner">
-            <div class="stat-item">
-                <b style="color:var(--accent);">${{u.get('balance',0):.2f}}</b>
-                <span>الرصيد المتاح</span>
-            </div>
-            <div class="stat-item">
-                <b style="color:var(--success);">${{u.get('wallet',0):.2f}}</b>
-                <span>المحفظة الرقمية</span>
-            </div>
-            <div class="stat-item">
-                <b style="color:var(--info);">${{u.get('spent',0):.2f}}</b>
-                <span>الإنفاق الكلي</span>
-            </div>
-        </div>
-        
-        <div class="card">
-            <h4 style="margin-bottom:15px; border-right: 3px solid var(--accent); padding-right:10px;">
-                📦 طلب خدمة جديدة
-            </h4>
-            <form action="/place_order_api">
-                <select onchange="updateSvcs(this.value)" required>
-                    <option value="" disabled selected>👇 اختر القسم...</option>
-                    {"".join([f'<option value="{c}">{c}</option>' for c in cats])}
-                </select>
-                <select name="sid" id="sid_select" onchange="calculateCost()" required>
-                    <option value="" disabled selected>👇 اختر الخدمة...</option>
-                </select>
-                <input type="text" name="link" placeholder="🔗 الرابط (Link)" required>
-                <input type="number" name="qty" id="qty_input" placeholder="📊 الكمية (Quantity)" oninput="calculateCost()" required>
-                <input type="text" name="coupon" id="coupon_input" placeholder="🎟️ كود الخصم (اختياري)">
+            <div style="font-weight:900; color:var(--accent); font-size:22px;">{SITE_NAME}</div>
   
