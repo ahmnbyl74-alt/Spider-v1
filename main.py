@@ -635,43 +635,9 @@ class SpiderServer(http.server.BaseHTTPRequestHandler):
                 go("/admin_panel")
                 return
 
-        # 3. معالجة طلبات المستخدمين (Place Order)
-        if p == "/place_order_api":
-            sid, qty = q.get('sid',[''])[0], int(q.get('qty',['0'])[0])
-            svc = next((s for s in db.get('services', []) if s['id'] == sid), None)
-            if svc and qty > 0:
-                cost = (float(svc['price']) / 1000) * qty
-                if db['users'][user]['balance'] >= cost:
-                    db['users'][user]['balance'] -= cost
-                    db['orders'].append({"user": user, "svc": svc['name'], "qty": qty, "cost": cost, "status": "قيد التنفيذ"})
-                    save_db(db)
-                    res("<html><script>alert('تم الطلب بنجاح!'); window.location='/';</script></html>")
-                    return
-            res("<html><script>alert('فشل! تأكد من الرصيد والكمية'); window.location='/';</script></html>"); return
-
-        # --- [ 4. توجيه الصفحات - نسخة شاملة ومصلحة ] ---
-        # ملاحظة: تم وضع احتمالات للمفرد والجمع (setting و settings) لضمان استجابة الأزرار
-                # 4. توجيه الصفحات
-        if p == "/admin_panel":
-            res(get_admin_page(db))
-            
-        elif p == "/settings" or p == "/setting":
-            res(get_settings_page(db, user))
-
-        elif p == "/order_history" or p == "/orders":
-            res(get_orders_page(db, user))
-
-        elif p == "/logout" or p == "/exit":
-            self.send_response(302)
-            self.send_header("Set-Cookie", "session_user=; Max-Age=0; Path=/")
-            self.send_header("Location", "/")
-            self.end_headers()
-            return
-
         elif p == "/place_order_api":
-            import requests  # ضروري جداً للاتصال بالمزود
+            import requests
             
-            # 1. جلب بيانات الطلب من المستخدم
             svc_id = q.get('service', [''])[0]
             target_link = q.get('link', [''])[0]
             try:
@@ -679,68 +645,45 @@ class SpiderServer(http.server.BaseHTTPRequestHandler):
             except:
                 qty = 0
 
-            # 2. البحث عن الخدمة والتأكد من وجود المستخدم ورصيده
+            # جلب بيانات الخدمة والمستخدم
             svc = next((s for s in db.get('services', []) if s['id'] == svc_id), None)
-            user_info = db.get('users', {}).get(user)
+            u_data = db.get('users', {}).get(user)
 
-            if svc and user_info:
+            if svc and u_data:
                 cost = (svc['price'] / 1000) * qty
-                if user_info['balance'] >= cost:
+                if u_data['balance'] >= cost:
                     
-                    # --- [بداية عملية الرشق التلقائي] ---
-                    remote_order_id = "فشل الإرسال"
+                    # --- كود الاتصال التلقائي بالمزود ---
                     try:
-                        # تجهيز البيانات للمزود
-                        api_data = {
-                            'key': svc.get('api_key', ''), # مفتاحك عند المزود
+                        api_payload = {
+                            'key': svc.get('api_key', ''),
                             'action': 'add',
-                            'service': svc.get('remote_id', ''), # ايدي الخدمة عند المزود
+                            'service': svc.get('remote_id', ''),
                             'link': target_link,
                             'quantity': qty
                         }
-                        
-                        # إرسال الطلب (Timeout 10 ثواني لضمان عدم تعليق السيرفر)
-                        api_url = svc.get('api_url', '')
-                        response = requests.post(api_url, data=api_data, timeout=15)
-                        
-                        if response.status_code == 200:
-                            result = response.json()
-                            if 'order' in result:
-                                remote_order_id = result['order'] # رقم الطلب من المزود
-                            else:
-                                remote_order_id = f"خطأ من المزود: {result.get('error', 'غير معروف')}"
-                        else:
-                            remote_order_id = f"خطأ اتصال: {response.status_code}"
-                            
+                        # إرسال الطلب للمزود
+                        response = requests.post(svc.get('api_url', ''), data=api_payload, timeout=15)
+                        api_res = response.json()
+                        remote_id = api_res.get('order', f"خطأ: {api_res}")
                     except Exception as e:
-                        remote_order_id = f"خطأ برمجي: {str(e)}"
-                    # --- [نهاية عملية الرشق التلقائي] ---
+                        remote_id = f"فشل اتصال: {str(e)}"
+                    # --- نهاية الاتصال ---
 
-                    # 3. خصم الرصيد وتحديث قاعدة البيانات
+                    # تحديث البيانات في الموقع
                     db['users'][user]['balance'] -= cost
-                    
-                    new_order = {
-                        "user": user,
-                        "svc": svc['name'],
-                        "qty": qty,
-                        "cost": cost,
-                        "status": "قيد التنفيذ" if "خطأ" not in str(remote_order_id) else "فشل",
-                        "remote_id": remote_order_id,
-                        "date": "2026-05-05" # يمكنك استخدام datetime.now()
-                    }
-                    
-                    db.setdefault('orders', []).append(new_order)
+                    db.setdefault('orders', []).append({
+                        "user": user, "svc": svc['name'], "qty": qty, 
+                        "cost": cost, "status": "قيد التنفيذ", 
+                        "remote_id": remote_id, "date": "2026-05-05"
+                    })
                     save_db(db)
-                    
-                    # إظهار رسالة نجاح أو فشل للمستخدم
-                    if "خطأ" in str(remote_order_id):
-                        res(f"<h1>حدثت مشكلة في الربط: {remote_order_id}</h1><a href='/'>رجوع</a>")
-                    else:
-                        res("<h1>✅ تم استلام طلبك وبدء الرشق تلقائياً!</h1><script>setTimeout(()=>location.href='/order_history', 2500)</script>")
+                    res("<h1>✅ تم إرسال الطلب للمزود بنجاح!</h1><script>setTimeout(()=>location.href='/order_history', 2000)</script>")
                 else:
-                    res("<h1>❌ رصيدك لا يكفي لإتمام هذه العملية</h1><a href='/'>رجوع</a>")
+                    res("<h1>❌ رصيدك غير كافٍ</h1>")
             else:
-                res("<h1>❌ عذراً، الخدمة غير متوفرة حالياً</h1><a href='/'>رجوع</a>")
+                res("<h1>❌ خطأ في بيانات الخدمة</h1>")
+
             # الصفحة الرئيسية الافتراضية
             res(get_user_page(db, user))
 
